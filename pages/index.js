@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -7,86 +7,71 @@ const supabase = createClient(
 );
 
 export default function Home() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  const videoRef = useRef(null);
   const [recording, setRecording] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState(null);
+  const [videoURL, setVideoURL] = useState(null);
 
-  const startRecording = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    videoRef.current!.srcObject = stream;
-    videoRef.current!.play();
+  useEffect(() => {
+    async function setupCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      videoRef.current.srcObject = stream;
+    }
+    setupCamera();
+  }, []);
 
-    const mediaRecorder = new MediaRecorder(stream);
-    mediaRecorderRef.current = mediaRecorder;
-    chunksRef.current = [];
+  const startRecording = () => {
+    const stream = videoRef.current.srcObject;
+    const recorder = new MediaRecorder(stream);
+    const chunks = [];
 
-    mediaRecorder.ondataavailable = (e) => chunksRef.current.push(e.data);
-    mediaRecorder.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-      await uploadVideo(blob);
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.onstop = async () => {
+      const blob = new Blob(chunks, { type: 'video/webm' });
+      const file = new File([blob], 'interview.webm', { type: 'video/webm' });
+
+      // Upload to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('videos')
+        .upload(`recordings/${Date.now()}_interview.webm`, file);
+
+      if (error) {
+        console.error('Upload error:', error.message);
+      } else {
+        const { data: publicUrlData } = supabase.storage
+          .from('videos')
+          .getPublicUrl(data.path);
+        setVideoURL(publicUrlData.publicUrl);
+      }
     };
 
-    mediaRecorder.start();
->>>>>>> e2bcfe1 (Removed TypeScript files and added JavaScript version)
+    recorder.start();
+    setMediaRecorder(recorder);
     setRecording(true);
   };
 
   const stopRecording = () => {
-<<<<<<< HEAD
-    mediaRecorderRef.current.stop();
+    mediaRecorder.stop();
     setRecording(false);
   };
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>QuickScreening</h1>
-      <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', maxWidth: 600 }} />
-      <div style={{ marginTop: 10 }}>
-        {recording ? (
-          <button onClick={stopRecording}>Stop Recording</button>
-        ) : (
+    <div style={{ padding: '2rem' }}>
+      <h1>QuickScreening – One-Way Video Interview</h1>
+      <video ref={videoRef} autoPlay playsInline muted width={640} height={480} />
+      <div style={{ marginTop: '1rem' }}>
+        {!recording ? (
           <button onClick={startRecording}>Start Recording</button>
+        ) : (
+          <button onClick={stopRecording}>Stop Recording</button>
         )}
       </div>
-      {videoUrl && (
-        <div style={{ marginTop: 10 }}>
-          <h3>Preview:</h3>
-          <video src={videoUrl} controls style={{ width: '100%', maxWidth: 600 }} />
+      {videoURL && (
+        <div style={{ marginTop: '1rem' }}>
+          <h2>Uploaded Video:</h2>
+          <video src={videoURL} controls width={640} />
         </div>
       )}
     </div>
-=======
-    mediaRecorderRef.current?.stop();
-    setRecording(false);
-
-    const stream = videoRef.current?.srcObject as MediaStream;
-    stream?.getTracks().forEach((track) => track.stop());
-    videoRef.current!.srcObject = null;
-  };
-
-  const uploadVideo = async (blob: Blob) => {
-    setUploading(true);
-    const file = new File([blob], `video-${Date.now()}.webm`, { type: 'video/webm' });
-    const { data, error } = await supabase.storage.from('videos').upload(file.name, file);
-    if (error) alert('Upload failed: ' + error.message);
-    else alert('Upload successful!');
-    setUploading(false);
-  };
-
-  return (
-    <main style={{ padding: 40, textAlign: 'center' }}>
-      <h1>QuickScreening</h1>
-      <video ref={videoRef} style={{ width: '80%', marginBottom: 20 }} />
-      <br />
-      {!recording ? (
-        <button onClick={startRecording} disabled={uploading}>🎥 Start Recording</button>
-      ) : (
-        <button onClick={stopRecording}>⏹ Stop Recording</button>
-      )}
-      {uploading && <p>Uploading video...</p>}
-    </main>
->>>>>>> e2bcfe1 (Removed TypeScript files and added JavaScript version)
   );
 }
