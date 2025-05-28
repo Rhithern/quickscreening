@@ -14,6 +14,7 @@ export default function PostJob() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [questions, setQuestions] = useState(['']);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
@@ -23,12 +24,21 @@ export default function PostJob() {
     }
   }, [user, router]);
 
+  const handleQuestionChange = (index, value) => {
+    const updated = [...questions];
+    updated[index] = value;
+    setQuestions(updated);
+  };
+
+  const addQuestionField = () => {
+    setQuestions([...questions, '']);
+  };
+
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
     setErrorMsg(null);
 
-    // Get recruiter profile id
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('id')
@@ -41,12 +51,14 @@ export default function PostJob() {
       return;
     }
 
-    // Insert new job
-    const { data, error } = await supabase.from('jobs').insert([
+    const cleanQuestions = questions.map((q) => q.trim()).filter((q) => q);
+
+    const { error } = await supabase.from('jobs').insert([
       {
         title,
         description,
         recruiter_id: profile.id,
+        questions: cleanQuestions.length ? cleanQuestions : null,
       },
     ]);
 
@@ -56,7 +68,6 @@ export default function PostJob() {
       return;
     }
 
-    // Redirect to recruiter dashboard after successful post
     router.push('/recruiter-dashboard');
   }
 
@@ -90,11 +101,24 @@ export default function PostJob() {
             />
           </label>
         </div>
-        {errorMsg && (
-          <p style={{ color: 'red' }}>
-            {errorMsg}
-          </p>
-        )}
+        <div style={{ marginBottom: 12 }}>
+          <label>Interview Questions</label>
+          {questions.map((q, i) => (
+            <div key={i} style={{ marginBottom: 8 }}>
+              <input
+                type="text"
+                placeholder={`Question ${i + 1}`}
+                value={q}
+                onChange={(e) => handleQuestionChange(i, e.target.value)}
+                style={{ width: '100%', padding: 8 }}
+              />
+            </div>
+          ))}
+          <button type="button" onClick={addQuestionField}>
+            ➕ Add another question
+          </button>
+        </div>
+        {errorMsg && <p style={{ color: 'red' }}>{errorMsg}</p>}
         <button type="submit" disabled={saving}>
           {saving ? 'Posting...' : 'Post Job'}
         </button>
