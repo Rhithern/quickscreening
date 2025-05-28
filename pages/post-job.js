@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useUser } from '@supabase/auth-helpers-react';
+import { v4 as uuidv4 } from 'uuid';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -14,7 +15,8 @@ export default function PostJob() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [questions, setQuestions] = useState(['']);
+  const [videoFile, setVideoFile] = useState(null);
+  const [audioFile, setAudioFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
@@ -24,51 +26,70 @@ export default function PostJob() {
     }
   }, [user, router]);
 
-  const handleQuestionChange = (index, value) => {
-    const updated = [...questions];
-    updated[index] = value;
-    setQuestions(updated);
-  };
+  async function handleFileUpload(file, folder) {
+    const filename = `${folder}/${uuidv4()}-${file.name}`;
+    const { error } = await supabase.storage
+      .from('quickscreening')
+      .upload(filename, file);
 
-  const addQuestionField = () => {
-    setQuestions([...questions, '']);
-  };
+    if (error) {
+      throw new Error(`Failed to upload ${folder} file`);
+    }
+
+    const { data } = supabase.storage
+      .from('quickscreening')
+      .getPublicUrl(filename);
+
+    return data.publicUrl;
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
     setErrorMsg(null);
 
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('user_id', user.id)
-      .single();
+    try {
+      // Get recruiter profile id
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .single();
 
-    if (profileError) {
-      setErrorMsg('Failed to find your profile.');
+      if (profileError) throw new Error('Failed to find your profile.');
+
+      // Upload files if provided
+      let videoUrl = null;
+      let audioUrl = null;
+
+      if (videoFile) {
+        videoUrl = await handleFileUpload(videoFile, 'video-questions');
+      }
+
+      if (audioFile) {
+        audioUrl = await handleFileUpload(audioFile, 'audio-questions');
+      }
+
+      // Insert job
+      const { error } = await supabase.from('jobs').insert([
+        {
+          title,
+          description,
+          recruiter_id: profile.id,
+          video_question_url: videoUrl,
+          audio_question_url: audioUrl
+        }
+      ]);
+
+      if (error) throw error;
+
+      router.push('/recruiter-dashboard');
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(err.message || 'Error occurred');
+    } finally {
       setSaving(false);
-      return;
     }
-
-    const cleanQuestions = questions.map((q) => q.trim()).filter((q) => q);
-
-    const { error } = await supabase.from('jobs').insert([
-      {
-        title,
-        description,
-        recruiter_id: profile.id,
-        questions: cleanQuestions.length ? cleanQuestions : null,
-      },
-    ]);
-
-    if (error) {
-      setErrorMsg('Failed to post job: ' + error.message);
-      setSaving(false);
-      return;
-    }
-
-    router.push('/recruiter-dashboard');
   }
 
   if (!user) return null;
@@ -78,8 +99,7 @@ export default function PostJob() {
       <h1>Post a New Job</h1>
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: 12 }}>
-          <label>
-            Job Title <br />
+          <label>Job Title<br />
             <input
               type="text"
               required
@@ -90,8 +110,7 @@ export default function PostJob() {
           </label>
         </div>
         <div style={{ marginBottom: 12 }}>
-          <label>
-            Job Description <br />
+          <label>Job Description<br />
             <textarea
               required
               rows={6}
@@ -102,21 +121,22 @@ export default function PostJob() {
           </label>
         </div>
         <div style={{ marginBottom: 12 }}>
-          <label>Interview Questions</label>
-          {questions.map((q, i) => (
-            <div key={i} style={{ marginBottom: 8 }}>
-              <input
-                type="text"
-                placeholder={`Question ${i + 1}`}
-                value={q}
-                onChange={(e) => handleQuestionChange(i, e.target.value)}
-                style={{ width: '100%', padding: 8 }}
-              />
-            </div>
-          ))}
-          <button type="button" onClick={addQuestionField}>
-            ➕ Add another question
-          </button>
+          <label>Upload Video Question (optional)<br />
+            <input
+              type="file"
+              accept="video/*"
+              onChange={(e) => setVideoFile(e.target.files[0])}
+            />
+          </label>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label>Upload Audio Question (optional)<br />
+            <input
+              type="file"
+              accept="audio/*"
+              onChange={(e) => setAudioFile(e.target.files[0])}
+            />
+          </label>
         </div>
         {errorMsg && <p style={{ color: 'red' }}>{errorMsg}</p>}
         <button type="submit" disabled={saving}>
