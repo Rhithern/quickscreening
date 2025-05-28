@@ -1,86 +1,43 @@
-import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+import { useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 export default function Dashboard() {
   const router = useRouter();
-  const [session, setSession] = useState(null);
-  const [userRole, setUserRole] = useState(null); // 'recruiter' or 'candidate'
 
   useEffect(() => {
-    const currentSession = supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
-        router.push('/login');
-      } else {
-        setSession(data.session);
-        // Fetch user metadata or role from Supabase
-        fetchUserRole(data.session.user.id);
-      }
-    });
+    const checkAuth = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    // Listen for auth changes (optional)
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (!session) {
         router.push('/login');
-      } else {
-        setSession(session);
-        fetchUserRole(session.user.id);
       }
-    });
+    };
 
-    return () => listener?.subscription.unsubscribe();
-  }, [router]);
-
-  async function fetchUserRole(userId) {
-    // Example: fetch role from a 'profiles' table in Supabase
-    let { data, error } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', userId)
-      .single();
-
-    if (error) {
-      console.error('Error fetching user role:', error);
-      return;
-    }
-    setUserRole(data.role);
-  }
-
-  async function logout() {
-    await supabase.auth.signOut();
-    router.push('/login');
-  }
-
-  if (!session) return <div>Loading...</div>;
+    checkAuth();
+  }, []);
 
   return (
-    <div>
-      <h1>Dashboard</h1>
-      <p>Welcome, {session.user.email}</p>
-      <p>Your role: {userRole || 'loading...'}</p>
+    <div className="p-4">
+      <nav className="flex gap-4 mb-4">
+        <Link href="/dashboard" className="text-blue-500 hover:underline">Dashboard</Link>
+        <Link href="/profile" className="text-blue-500 hover:underline">My Profile</Link>
+        <button
+          onClick={async () => {
+            await supabase.auth.signOut();
+            router.push('/login');
+          }}
+          className="text-red-500 hover:underline"
+        >
+          Logout
+        </button>
+      </nav>
 
-      {userRole === 'recruiter' && (
-        <div>
-          <h2>Recruiter Panel</h2>
-          <p>Here you can view candidate interviews, manage jobs, etc.</p>
-          {/* Add recruiter features here */}
-        </div>
-      )}
-
-      {userRole === 'candidate' && (
-        <div>
-          <h2>Candidate Panel</h2>
-          <p>Here you can record or view your interviews.</p>
-          {/* Add candidate features here */}
-        </div>
-      )}
-
-      <button onClick={logout}>Logout</button>
+      <h1 className="text-xl font-bold">Welcome to your dashboard</h1>
+      {/* Add content below as needed */}
     </div>
   );
 }
