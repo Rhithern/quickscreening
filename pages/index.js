@@ -10,6 +10,7 @@ const supabase = createClient(
 export default function Home() {
   const router = useRouter();
   const [session, setSession] = useState(null);
+  const [role, setRole] = useState(null);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -18,37 +19,49 @@ export default function Home() {
         router.push('/login');
       } else {
         setSession(session);
+        // Get role from profiles
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('user_id', session.user.id)
+          .single();
+
+        if (profile?.role) setRole(profile.role);
       }
     };
 
     checkSession();
-  }, [router]);
+  }, []);
 
   if (!session) return <p>Loading...</p>;
 
   return (
-    <div style={{ maxWidth: 800, margin: 'auto', padding: 20 }}>
+    <div style={{ maxWidth: 600, margin: 'auto', padding: 20 }}>
       <h1>Welcome to QuickScreening</h1>
 
       <nav style={{ marginBottom: 20 }}>
-        <a href="/recruiter-dashboard" style={{ marginRight: 20 }}>
-          Recruiter Dashboard
-        </a>
-        <a href="/candidate-dashboard" style={{ marginRight: 20 }}>
-          Candidate Dashboard
-        </a>
+        {role === 'recruiter' && (
+          <>
+            <a href="/recruiter-dashboard" style={{ marginRight: 15 }}>
+              Recruiter Dashboard
+            </a>
+            <a href="/schedule-live-interview" style={{ marginRight: 15 }}>
+              Schedule Live Interview
+            </a>
+          </>
+        )}
+
+        {role === 'candidate' && (
+          <>
+            <a href="/candidate-dashboard" style={{ marginRight: 15 }}>
+              Candidate Dashboard
+            </a>
+            <a href="/candidate-live-interviews" style={{ marginRight: 15 }}>
+              Live Interviews
+            </a>
+          </>
+        )}
       </nav>
-
-      <button
-        onClick={async () => {
-          await supabase.auth.signOut();
-          router.push('/login');
-        }}
-      >
-        Logout
-      </button>
-
-      {/* You can add more UI below */}
     </div>
   );
 }
