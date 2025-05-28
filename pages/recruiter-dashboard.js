@@ -12,8 +12,9 @@ export default function RecruiterDashboard() {
   const user = useUser();
   const router = useRouter();
   const [jobs, setJobs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [videosByJob, setVideosByJob] = useState({});
+  const [loadingJobs, setLoadingJobs] = useState(true);
+  const [liveInterviews, setLiveInterviews] = useState([]);
+  const [loadingInterviews, setLoadingInterviews] = useState(true);
 
   useEffect(() => {
     if (!user) {
@@ -21,10 +22,8 @@ export default function RecruiterDashboard() {
       return;
     }
 
-    async function fetchJobsAndVideos() {
-      setLoading(true);
-
-      // Get recruiter profile ID
+    async function fetchData() {
+      // Get recruiter profile id
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('id')
@@ -32,104 +31,105 @@ export default function RecruiterDashboard() {
         .single();
 
       if (profileError) {
-        console.error('Profile fetch error:', profileError);
-        setLoading(false);
+        console.error(profileError);
+        setLoadingJobs(false);
+        setLoadingInterviews(false);
         return;
       }
 
-      // Fetch jobs posted by recruiter
+      // Fetch jobs
       const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select('*')
         .eq('recruiter_id', profileData.id);
 
       if (jobsError) {
-        console.error('Jobs fetch error:', jobsError);
-        setLoading(false);
-        return;
+        console.error(jobsError);
+      } else {
+        setJobs(jobsData);
       }
+      setLoadingJobs(false);
 
-      setJobs(jobsData);
+      // Fetch upcoming live interviews (only future dates)
+      const { data: interviewsData, error: interviewsError } = await supabase
+        .from('live_interviews')
+        .select(`
+          id,
+          scheduled_at,
+          status,
+          candidate_id,
+          job:jobs(title)
+        `)
+        .eq('recruiter_id', profileData.id)
+        .gte('scheduled_at', new Date().toISOString())  // only upcoming
+        .order('scheduled_at', { ascending: true });
 
-      // For each job, fetch candidate video submissions
-      const videosMap = {};
-
-      for (const job of jobsData) {
-        const { data: videosData, error: videosError } = await supabase
-          .from('videos')
-          .select('id, user_id, url, created_at')
-          .eq('job_id', job.id);
-
-        if (videosError) {
-          console.error(`Videos fetch error for job ${job.id}:`, videosError);
-          videosMap[job.id] = [];
-        } else {
-          videosMap[job.id] = videosData || [];
-        }
+      if (interviewsError) {
+        console.error(interviewsError);
+      } else {
+        setLiveInterviews(interviewsData);
       }
-
-      setVideosByJob(videosMap);
-      setLoading(false);
+      setLoadingInterviews(false);
     }
 
-    fetchJobsAndVideos();
+    fetchData();
   }, [user, router]);
 
   if (!user) return null;
 
   return (
-    <div style={{ maxWidth: 900, margin: 'auto', padding: 20 }}>
+    <div style={{ maxWidth: 800, margin: 'auto', padding: 20 }}>
       <h1>Recruiter Dashboard</h1>
 
-      <a href="/post-job" style={{ display: 'inline-block', marginBottom: 20 }}>
-        ➕ Post New Job
-      </a>
+      <nav style={{ marginBottom: 20 }}>
+        <a href="/post-job" style={{ marginRight: 15 }}>
+          ➕ Post New Job
+        </a>
+        <a href="/schedule-live-interview" style={{ marginRight: 15 }}>
+          📅 Schedule Live Interview
+        </a>
+      </nav>
 
-      {loading ? (
-        <p>Loading jobs and videos...</p>
-      ) : jobs.length === 0 ? (
-        <p>You have not posted any jobs yet.</p>
-      ) : (
-        jobs.map((job) => (
-          <div key={job.id} style={{ marginBottom: 40 }}>
-            <h2>{job.title}</h2>
-            <p>{job.description}</p>
+      <section style={{ marginBottom: 30 }}>
+        <h2>Your Jobs</h2>
+        {loadingJobs ? (
+          <p>Loading jobs...</p>
+        ) : jobs.length === 0 ? (
+          <p>You have not posted any jobs yet.</p>
+        ) : (
+          <ul>
+            {jobs.map((job) => (
+              <li key={job.id} style={{ marginBottom: 15 }}>
+                <strong>{job.title}</strong> <br />
+                <a href={`/job/${job.id}`} target="_blank" rel="noopener noreferrer">
+                  View job link
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
-            <a href={`/job/${job.id}`} target="_blank" rel="noopener noreferrer">
-              View job link
-            </a>
-
-            <h3 style={{ marginTop: 20 }}>Candidate Video Submissions:</h3>
-
-            {videosByJob[job.id] && videosByJob[job.id].length > 0 ? (
-              videosByJob[job.id].map((video) => (
-                <div
-                  key={video.id}
-                  style={{
-                    marginBottom: 15,
-                    padding: 10,
-                    border: '1px solid #ddd',
-                    borderRadius: 4,
-                  }}
-                >
-                  <p>
-                    Candidate ID: {video.user_id} <br />
-                    Submitted: {new Date(video.created_at).toLocaleString()}
-                  </p>
-                  <video
-                    src={video.url}
-                    controls
-                    width="100%"
-                    style={{ maxWidth: 600, borderRadius: 4 }}
-                  />
-                </div>
-              ))
-            ) : (
-              <p>No submissions yet for this job.</p>
-            )}
-          </div>
-        ))
-      )}
+      <section>
+        <h2>Upcoming Live Interviews</h2>
+        {loadingInterviews ? (
+          <p>Loading live interviews...</p>
+        ) : liveInterviews.length === 0 ? (
+          <p>No upcoming live interviews scheduled.</p>
+        ) : (
+          <ul>
+            {liveInterviews.map((interview) => (
+              <li key={interview.id} style={{ marginBottom: 15 }}>
+                <strong>Job:</strong> {interview.job?.title || 'Unknown'} <br />
+                <strong>Candidate ID:</strong> {interview.candidate_id} <br />
+                <strong>Scheduled At:</strong>{' '}
+                {new Date(interview.scheduled_at).toLocaleString()} <br />
+                <strong>Status:</strong> {interview.status}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
