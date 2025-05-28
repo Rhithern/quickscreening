@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useUser } from '@supabase/auth-helpers-react';
@@ -14,78 +14,89 @@ export default function PostJob() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
 
-  // Redirect if not logged in
-  if (!user) {
-    router.push('/login');
-    return null;
-  }
+  useEffect(() => {
+    if (!user) {
+      router.push('/login');
+    }
+  }, [user, router]);
 
   async function handleSubmit(e) {
     e.preventDefault();
-    setLoading(true);
-    setErrorMsg('');
+    setSaving(true);
+    setErrorMsg(null);
 
-    // Get profile id of logged-in user (recruiter)
-    const { data: profileData, error: profileError } = await supabase
+    // Get recruiter profile id
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('id')
       .eq('user_id', user.id)
       .single();
 
     if (profileError) {
-      setErrorMsg('Error fetching profile: ' + profileError.message);
-      setLoading(false);
+      setErrorMsg('Failed to find your profile.');
+      setSaving(false);
       return;
     }
 
-    // Insert job post
-    const { error } = await supabase.from('jobs').insert({
-      recruiter_id: profileData.id,
-      title,
-      description,
-    });
+    // Insert new job
+    const { data, error } = await supabase.from('jobs').insert([
+      {
+        title,
+        description,
+        recruiter_id: profile.id,
+      },
+    ]);
 
     if (error) {
-      setErrorMsg('Error creating job: ' + error.message);
-      setLoading(false);
+      setErrorMsg('Failed to post job: ' + error.message);
+      setSaving(false);
       return;
     }
 
-    setLoading(false);
-    alert('Job posted successfully!');
-    router.push('/dashboard'); // redirect to dashboard or jobs list
+    // Redirect to recruiter dashboard after successful post
+    router.push('/recruiter-dashboard');
   }
+
+  if (!user) return null;
 
   return (
     <div style={{ maxWidth: 600, margin: 'auto', padding: 20 }}>
       <h1>Post a New Job</h1>
       <form onSubmit={handleSubmit}>
-        <label>
-          Job Title<br />
-          <input
-            type="text"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            required
-            style={{ width: '100%', padding: 8, marginBottom: 12 }}
-          />
-        </label>
-        <label>
-          Job Description<br />
-          <textarea
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            required
-            rows={6}
-            style={{ width: '100%', padding: 8, marginBottom: 12 }}
-          />
-        </label>
-        {errorMsg && <p style={{ color: 'red' }}>{errorMsg}</p>}
-        <button type="submit" disabled={loading}>
-          {loading ? 'Posting...' : 'Post Job'}
+        <div style={{ marginBottom: 12 }}>
+          <label>
+            Job Title <br />
+            <input
+              type="text"
+              required
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              style={{ width: '100%', padding: 8 }}
+            />
+          </label>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label>
+            Job Description <br />
+            <textarea
+              required
+              rows={6}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              style={{ width: '100%', padding: 8 }}
+            />
+          </label>
+        </div>
+        {errorMsg && (
+          <p style={{ color: 'red' }}>
+            {errorMsg}
+          </p>
+        )}
+        <button type="submit" disabled={saving}>
+          {saving ? 'Posting...' : 'Post Job'}
         </button>
       </form>
     </div>
