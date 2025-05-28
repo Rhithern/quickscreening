@@ -11,10 +11,8 @@ const supabase = createClient(
 export default function CandidateDashboard() {
   const user = useUser();
   const router = useRouter();
-
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!user) {
@@ -24,43 +22,19 @@ export default function CandidateDashboard() {
 
     async function fetchVideos() {
       setLoading(true);
-      setError(null);
+      const { data, error } = await supabase
+        .from('videos')
+        .select('id, job_id, url, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
-      try {
-        // Get candidate profile id
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('user_id', user.id)
-          .single();
-
-        if (profileError) throw profileError;
-
-        // Fetch videos with job info
-        const { data, error } = await supabase
-          .from('videos')
-          .select(`
-            id,
-            video_url,
-            question_index,
-            submitted_at,
-            job:jobs (
-              id,
-              title
-            )
-          `)
-          .eq('user_id', profile.id)
-          .order('submitted_at', { ascending: false });
-
-        if (error) throw error;
-
+      if (error) {
+        console.error('Error fetching videos:', error);
+        setVideos([]);
+      } else {
         setVideos(data);
-      } catch (err) {
-        console.error(err);
-        setError('Failed to load your submissions');
-      } finally {
-        setLoading(false);
       }
+      setLoading(false);
     }
 
     fetchVideos();
@@ -68,41 +42,28 @@ export default function CandidateDashboard() {
 
   if (!user) return null;
 
-  if (loading) return <p>Loading your submitted videos...</p>;
-  if (error) return <p style={{ color: 'red' }}>{error}</p>;
-
-  if (videos.length === 0) {
-    return <p>You have not submitted any video answers yet.</p>;
-  }
-
-  // Group videos by job
-  const videosByJob = videos.reduce((acc, video) => {
-    if (!acc[video.job.id]) acc[video.job.id] = { job: video.job, videos: [] };
-    acc[video.job.id].videos.push(video);
-    return acc;
-  }, {});
-
   return (
     <div style={{ maxWidth: 800, margin: 'auto', padding: 20 }}>
-      <h1>Your Video Submissions</h1>
+      <h1>Your Submitted Videos</h1>
 
-      {Object.values(videosByJob).map(({ job, videos }) => (
-        <div key={job.id} style={{ marginBottom: 40 }}>
-          <h2>{job.title}</h2>
-
-          {videos.map((vid) => (
-            <div key={vid.id} style={{ marginBottom: 20 }}>
-              <p><strong>Question #{vid.question_index + 1}</strong></p>
-              <video
-                src={vid.video_url}
-                controls
-                style={{ width: '100%', maxHeight: 300 }}
-              />
-              <p>Submitted: {new Date(vid.submitted_at).toLocaleString()}</p>
-            </div>
-          ))}
-        </div>
-      ))}
+      {loading ? (
+        <p>Loading your videos...</p>
+      ) : videos.length === 0 ? (
+        <p>You have not submitted any videos yet.</p>
+      ) : (
+        videos.map((video) => (
+          <div
+            key={video.id}
+            style={{ marginBottom: 20, border: '1px solid #ccc', padding: 12, borderRadius: 6 }}
+          >
+            <p>
+              Job ID: {video.job_id} <br />
+              Submitted on: {new Date(video.created_at).toLocaleString()}
+            </p>
+            <video src={video.url} controls width="100%" style={{ borderRadius: 6 }} />
+          </div>
+        ))
+      )}
     </div>
   );
 }
