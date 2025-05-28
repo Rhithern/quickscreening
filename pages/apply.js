@@ -102,6 +102,19 @@ export default function Apply() {
             />
           </label>
 
+          {/* 👇 Video Preview */}
+          {videoFile && (
+            <div style={{ marginTop: 20 }}>
+              <p><strong>Video Preview:</strong></p>
+              <video
+                src={URL.createObjectURL(videoFile)}
+                controls
+                width="100%"
+                style={{ borderRadius: 8, border: '1px solid #ccc' }}
+              />
+            </div>
+          )}
+
           {errorMsg && <p style={{ color: 'red' }}>{errorMsg}</p>}
 
           <button type="submit" disabled={uploading} style={{ marginTop: 20 }}>
