@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';  // <--- add this
 import { createClient } from '@supabase/supabase-js';
 import { useUser } from '@supabase/auth-helpers-react';
 
@@ -56,9 +57,12 @@ export default function RecruiterDashboard() {
     <div style={{ maxWidth: 800, margin: 'auto', padding: 20 }}>
       <h1>Recruiter Dashboard</h1>
 
-      <a href="/post-job" style={{ display: 'inline-block', marginBottom: 20 }}>
-        ➕ Post New Job
-      </a>
+      {/* Use Link for client-side navigation */}
+      <Link href="/post-job" passHref>
+        <a style={{ display: 'inline-block', marginBottom: 20, textDecoration: 'none', color: 'blue' }}>
+          ➕ Post New Job
+        </a>
+      </Link>
 
       {loading ? (
         <p>Loading jobs...</p>
@@ -69,13 +73,11 @@ export default function RecruiterDashboard() {
           {jobs.map((job) => (
             <li key={job.id} style={{ marginBottom: 15 }}>
               <strong>{job.title}</strong> <br />
-              <a
-                href={`/job/${job.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                View job link
-              </a>
+              <Link href={`/job/${job.id}`} passHref>
+                <a target="_blank" rel="noopener noreferrer" style={{ color: 'blue' }}>
+                  View job link
+                </a>
+              </Link>
             </li>
           ))}
         </ul>
