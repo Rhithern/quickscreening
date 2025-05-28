@@ -27,9 +27,14 @@ export default function Home() {
   if (!session) return <p>Loading...</p>;
 
   return (
-    <div>
-      <h1>Welcome to QuickScreening</h1>
-      {/* Your video recording UI can go here */}
-    </div>
-  );
-}
+  <div>
+    <h1>Welcome to QuickScreening</h1>
+    <button onClick={async () => {
+      await supabase.auth.signOut();
+      router.push('/login');
+    }}>
+      Logout
+    </button>
+    {/* Your video recording UI can go here */}
+  </div>
+);
