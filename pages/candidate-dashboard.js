@@ -21,16 +21,14 @@ export default function CandidateDashboard() {
     }
 
     async function fetchVideos() {
-      setLoading(true);
       const { data, error } = await supabase
         .from('videos')
-        .select('id, job_id, url, created_at')
+        .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching videos:', error);
-        setVideos([]);
       } else {
         setVideos(data);
       }
@@ -44,25 +42,46 @@ export default function CandidateDashboard() {
 
   return (
     <div style={{ maxWidth: 800, margin: 'auto', padding: 20 }}>
+      {/* Navigation */}
+      <nav style={{ marginBottom: 20 }}>
+        <a href="/candidate-dashboard" style={{ marginRight: 15, fontWeight: 'bold' }}>
+          Candidate Dashboard
+        </a>
+        <a href="/candidate-live-interviews" style={{ marginRight: 15 }}>
+          📅 Live Interviews
+        </a>
+        <button
+          onClick={async () => {
+            await supabase.auth.signOut();
+            router.push('/login');
+          }}
+          style={{ cursor: 'pointer' }}
+        >
+          Logout
+        </button>
+      </nav>
+
       <h1>Your Submitted Videos</h1>
 
       {loading ? (
-        <p>Loading your videos...</p>
+        <p>Loading videos...</p>
       ) : videos.length === 0 ? (
         <p>You have not submitted any videos yet.</p>
       ) : (
-        videos.map((video) => (
-          <div
-            key={video.id}
-            style={{ marginBottom: 20, border: '1px solid #ccc', padding: 12, borderRadius: 6 }}
-          >
-            <p>
-              Job ID: {video.job_id} <br />
-              Submitted on: {new Date(video.created_at).toLocaleString()}
-            </p>
-            <video src={video.url} controls width="100%" style={{ borderRadius: 6 }} />
-          </div>
-        ))
+        <ul>
+          {videos.map((video) => (
+            <li key={video.id} style={{ marginBottom: 20 }}>
+              <video width="320" height="240" controls>
+                <source src={video.video_url} type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
+              <p>
+                <strong>Job ID:</strong> {video.job_id} <br />
+                <small>Submitted on: {new Date(video.created_at).toLocaleString()}</small>
+              </p>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
