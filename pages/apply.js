@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { useUser } from '@supabase/auth-helpers-react';
 
@@ -9,119 +9,149 @@ const supabase = createClient(
 );
 
 export default function Apply() {
-  const user = useUser();
   const router = useRouter();
-  const { job_id } = router.query;
+  const user = useUser();
+  const { id: jobId } = router.query;
 
-  const [profile, setProfile] = useState(null);
-  const [videoFile, setVideoFile] = useState(null);
+  const [job, setJob] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [recordings, setRecordings] = useState({});
   const [uploading, setUploading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [errorMsg, setErrorMsg] = useState(null);
+
+  const mediaRecorderRefs = useRef({});
+  const streamRef = useRef(null);
+  const chunksRef = useRef({});
 
   useEffect(() => {
-    if (!user) {
-      router.push('/login');
-    } else {
-      fetchProfile();
-    }
+    if (!user) router.push('/login');
   }, [user]);
 
-  async function fetchProfile() {
+  useEffect(() => {
+    if (jobId) fetchJob();
+  }, [jobId]);
+
+  async function fetchJob() {
     const { data, error } = await supabase
-      .from('profiles')
+      .from('jobs')
       .select('*')
+      .eq('id', jobId)
+      .single();
+
+    if (error) {
+      console.error(error);
+    } else {
+      setJob(data);
+    }
+
+    setLoading(false);
+  }
+
+  async function startRecording(index) {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    streamRef.current = stream;
+
+    const recorder = new MediaRecorder(stream);
+    chunksRef.current[index] = [];
+
+    recorder.ondataavailable = (e) => {
+      chunksRef.current[index].push(e.data);
+    };
+
+    recorder.onstop = () => {
+      const blob = new Blob(chunksRef.current[index], { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      setRecordings((prev) => ({ ...prev, [index]: { blob, url } }));
+      stream.getTracks().forEach((track) => track.stop());
+    };
+
+    mediaRecorderRefs.current[index] = recorder;
+    recorder.start();
+  }
+
+  function stopRecording(index) {
+    mediaRecorderRefs.current[index]?.stop();
+  }
+
+  async function handleSubmit() {
+    if (!job || !user) return;
+
+    setUploading(true);
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id')
       .eq('user_id', user.id)
       .single();
 
-    if (!error) setProfile(data);
+    const uploads = Object.entries(recordings).map(async ([index, { blob }]) => {
+      const filePath = `videos/${user.id}-${jobId}-${index}-${Date.now()}.webm`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('quickscreening')
+        .upload(filePath, blob, {
+          contentType: 'video/webm',
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from('quickscreening')
+        .getPublicUrl(filePath);
+
+      await supabase.from('videos').insert([
+        {
+          user_id: profile.id,
+          job_id: job.id,
+          url: publicUrlData.publicUrl,
+        },
+      ]);
+    });
+
+    try {
+      await Promise.all(uploads);
+      alert('Application submitted!');
+      router.push('/candidate-dashboard');
+    } catch (e) {
+      alert('Error uploading videos');
+      console.error(e);
+    } finally {
+      setUploading(false);
+    }
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setUploading(true);
-    setErrorMsg(null);
-
-    if (!videoFile || !job_id || !profile) {
-      setErrorMsg('Missing video, job, or profile info.');
-      setUploading(false);
-      return;
-    }
-
-    const filename = `${user.id}-${Date.now()}.mp4`;
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('quickscreening')
-      .upload(filename, videoFile);
-
-    if (uploadError) {
-      setErrorMsg('Failed to upload video.');
-      setUploading(false);
-      return;
-    }
-
-    const { error: insertError } = await supabase.from('videos').insert([
-      {
-        user_id: profile.id,
-        job_id: job_id,
-        video_url: uploadData.path,
-      },
-    ]);
-
-    if (insertError) {
-      setErrorMsg('Failed to save video metadata.');
-      setUploading(false);
-      return;
-    }
-
-    setUploading(false);
-    setSuccess(true);
-  }
-
-  if (!user || !job_id) return <p>Loading...</p>;
+  if (!user || loading) return <p>Loading...</p>;
+  if (!job) return <p>Job not found</p>;
 
   return (
-    <div style={{ maxWidth: 600, margin: 'auto', padding: 20 }}>
-      <h1>Apply with Video</h1>
+    <div style={{ maxWidth: 700, margin: 'auto', padding: 20 }}>
+      <h1>Apply for: {job.title}</h1>
+      <p>{job.description}</p>
 
-      {success ? (
-        <div style={{ padding: 20, background: '#e6ffe6', border: '1px solid #00aa00' }}>
-          <h2>✅ Success!</h2>
-          <p>Your video has been submitted. Thank you!</p>
-          <a href="/candidate-dashboard">Go to Dashboard</a>
+      {Array.isArray(job.questions) && job.questions.map((question, index) => (
+        <div key={index} style={{ marginBottom: 30 }}>
+          <h4>Question {index + 1}</h4>
+          <p>{question}</p>
+
+          <div>
+            {!recordings[index] ? (
+              <>
+                <button onClick={() => startRecording(index)}>Start Recording</button>
+                <button onClick={() => stopRecording(index)} style={{ marginLeft: 10 }}>
+                  Stop Recording
+                </button>
+              </>
+            ) : (
+              <>
+                <video src={recordings[index].url} controls width="100%" />
+              </>
+            )}
+          </div>
         </div>
-      ) : (
-        <form onSubmit={handleSubmit}>
-          <label>
-            Upload Video (MP4 only):
-            <input
-              type="file"
-              accept="video/mp4"
-              onChange={(e) => setVideoFile(e.target.files[0])}
-              required
-              style={{ display: 'block', marginTop: 10 }}
-            />
-          </label>
+      ))}
 
-          {/* 👇 Video Preview */}
-          {videoFile && (
-            <div style={{ marginTop: 20 }}>
-              <p><strong>Video Preview:</strong></p>
-              <video
-                src={URL.createObjectURL(videoFile)}
-                controls
-                width="100%"
-                style={{ borderRadius: 8, border: '1px solid #ccc' }}
-              />
-            </div>
-          )}
-
-          {errorMsg && <p style={{ color: 'red' }}>{errorMsg}</p>}
-
-          <button type="submit" disabled={uploading} style={{ marginTop: 20 }}>
-            {uploading ? 'Submitting...' : 'Submit Application'}
-          </button>
-        </form>
-      )}
+      <button onClick={handleSubmit} disabled={uploading}>
+        {uploading ? 'Submitting...' : 'Submit Application'}
+      </button>
     </div>
   );
 }
