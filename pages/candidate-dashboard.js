@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { useUser } from '@supabase/auth-helpers-react';
 import { createClient } from '@supabase/supabase-js';
+import { useUser } from '@supabase/auth-helpers-react';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -11,8 +11,10 @@ const supabase = createClient(
 export default function CandidateDashboard() {
   const user = useUser();
   const router = useRouter();
+
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!user) {
@@ -22,35 +24,43 @@ export default function CandidateDashboard() {
 
     async function fetchVideos() {
       setLoading(true);
+      setError(null);
 
-      // Get the profile ID for the logged-in user
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
+      try {
+        // Get candidate profile id
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
 
-      if (profileError) {
-        console.error('Profile fetch error:', profileError);
+        if (profileError) throw profileError;
+
+        // Fetch videos with job info
+        const { data, error } = await supabase
+          .from('videos')
+          .select(`
+            id,
+            video_url,
+            question_index,
+            submitted_at,
+            job:jobs (
+              id,
+              title
+            )
+          `)
+          .eq('user_id', profile.id)
+          .order('submitted_at', { ascending: false });
+
+        if (error) throw error;
+
+        setVideos(data);
+      } catch (err) {
+        console.error(err);
+        setError('Failed to load your submissions');
+      } finally {
         setLoading(false);
-        return;
       }
-
-      // Get all video submissions by this user
-      const { data: videosData, error: videosError } = await supabase
-        .from('videos')
-        .select('id, video_url, job_id, created_at, jobs(title)')
-        .eq('user_id', profileData.id)
-        .order('created_at', { ascending: false });
-
-      if (videosError) {
-        console.error('Videos fetch error:', videosError);
-        setLoading(false);
-        return;
-      }
-
-      setVideos(videosData);
-      setLoading(false);
     }
 
     fetchVideos();
@@ -58,31 +68,41 @@ export default function CandidateDashboard() {
 
   if (!user) return null;
 
+  if (loading) return <p>Loading your submitted videos...</p>;
+  if (error) return <p style={{ color: 'red' }}>{error}</p>;
+
+  if (videos.length === 0) {
+    return <p>You have not submitted any video answers yet.</p>;
+  }
+
+  // Group videos by job
+  const videosByJob = videos.reduce((acc, video) => {
+    if (!acc[video.job.id]) acc[video.job.id] = { job: video.job, videos: [] };
+    acc[video.job.id].videos.push(video);
+    return acc;
+  }, {});
+
   return (
     <div style={{ maxWidth: 800, margin: 'auto', padding: 20 }}>
-      <h1>Candidate Dashboard</h1>
+      <h1>Your Video Submissions</h1>
 
-      {loading ? (
-        <p>Loading your submissions...</p>
-      ) : videos.length === 0 ? (
-        <p>You haven't submitted any video interviews yet.</p>
-      ) : (
-        <ul style={{ listStyle: 'none', paddingLeft: 0 }}>
-          {videos.map((video) => (
-            <li key={video.id} style={{ marginBottom: 30 }}>
-              <h3>{video.jobs?.title || 'Job'}</h3>
+      {Object.values(videosByJob).map(({ job, videos }) => (
+        <div key={job.id} style={{ marginBottom: 40 }}>
+          <h2>{job.title}</h2>
+
+          {videos.map((vid) => (
+            <div key={vid.id} style={{ marginBottom: 20 }}>
+              <p><strong>Question #{vid.question_index + 1}</strong></p>
               <video
-                src={video.video_url}
+                src={vid.video_url}
                 controls
-                style={{ width: '100%', maxHeight: 240 }}
+                style={{ width: '100%', maxHeight: 300 }}
               />
-              <p style={{ fontSize: '0.8em', color: '#666' }}>
-                Submitted on: {new Date(video.created_at).toLocaleString()}
-              </p>
-            </li>
+              <p>Submitted: {new Date(vid.submitted_at).toLocaleString()}</p>
+            </div>
           ))}
-        </ul>
-      )}
+        </div>
+      ))}
     </div>
   );
 }
