@@ -8,92 +8,76 @@ const supabase = createClient(
 
 export default function InterviewSubmissionsList({ recruiterId }) {
   const [submissions, setSubmissions] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!recruiterId) return;
 
-    const fetchJobs = async () => {
-      const { data, error } = await supabase
+    const fetchJobsAndSubmissions = async () => {
+      setLoading(true);
+
+      // Fetch jobs for this recruiter
+      const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select('id, title')
         .eq('recruiter_id', recruiterId);
 
-      if (error) console.error('Error fetching jobs:', error);
-      else setJobs(data);
+      if (jobsError) {
+        console.error(jobsError);
+        return;
+      }
+      setJobs(jobsData);
+
+      // Fetch all submissions initially
+      await fetchSubmissions(null);
     };
 
-    fetchJobs();
+    fetchJobsAndSubmissions();
   }, [recruiterId]);
 
-  useEffect(() => {
-    if (!recruiterId) return;
-
-    const fetchSubmissions = async () => {
-      setLoading(true);
-
-      let query = supabase
-        .from('interview_submissions')
-        .select(`
-          id,
-          question_text,
-          question_video_url,
-          answer_video_url,
-          submitted_at,
-          user_id,
-          status,
-          job:jobs(id, title, recruiter_id)
-        `)
-        .eq('job.recruiter_id', recruiterId)
-        .order('submitted_at', { ascending: false });
-
-      if (selectedJobId) {
-        query = query.eq('job.id', selectedJobId);
-      }
-
-      const { data, error } = await query;
-
-      if (error) console.error('Error fetching submissions:', error);
-      else setSubmissions(data);
-
-      setLoading(false);
-    };
-
-    fetchSubmissions();
-  }, [recruiterId, selectedJobId]);
-
-  const handleStatusChange = async (submissionId, newStatus) => {
-    const { error } = await supabase
+  const fetchSubmissions = async (jobId = null) => {
+    let query = supabase
       .from('interview_submissions')
-      .update({ status: newStatus })
-      .eq('id', submissionId);
+      .select(`
+        id,
+        question_text,
+        question_video_url,
+        answer_video_url,
+        submitted_at,
+        user_id,
+        job:jobs(id, title, recruiter_id)
+      `)
+      .order('submitted_at', { ascending: false });
 
-    if (error) {
-      console.error('Error updating status:', error);
-      return;
+    if (jobId) {
+      query = query.eq('job.id', jobId);
+    } else {
+      query = query.eq('job.recruiter_id', recruiterId);
     }
 
-    // Update local state
-    setSubmissions((prev) =>
-      prev.map((sub) =>
-        sub.id === submissionId ? { ...sub, status: newStatus } : sub
-      )
-    );
+    const { data, error } = await query;
+
+    if (error) console.error(error);
+    else setSubmissions(data);
+
+    setLoading(false);
+  };
+
+  const handleJobChange = (e) => {
+    const jobId = e.target.value || null;
+    setSelectedJobId(jobId);
+    fetchSubmissions(jobId);
   };
 
   return (
     <div>
       <h2>Candidate Interview Submissions</h2>
 
-      <div style={{ marginBottom: 20 }}>
-        <label htmlFor="jobFilter"><strong>Filter by Job:</strong>{' '}</label>
-        <select
-          id="jobFilter"
-          onChange={(e) => setSelectedJobId(e.target.value || null)}
-          value={selectedJobId || ''}
-        >
+      <label>
+        Filter by Job:{' '}
+        <select onChange={handleJobChange} value={selectedJobId || ''}>
           <option value="">All Jobs</option>
           {jobs.map((job) => (
             <option key={job.id} value={job.id}>
@@ -101,7 +85,7 @@ export default function InterviewSubmissionsList({ recruiterId }) {
             </option>
           ))}
         </select>
-      </div>
+      </label>
 
       {loading ? (
         <p>Loading submissions...</p>
@@ -120,18 +104,6 @@ export default function InterviewSubmissionsList({ recruiterId }) {
               <strong>Answer:</strong> <br />
               <video src={sub.answer_video_url} controls width="300" />
               <p><em>Submitted: {new Date(sub.submitted_at).toLocaleString()}</em></p>
-              <div>
-                <label><strong>Status: </strong></label>
-                <select
-                  value={sub.status || 'New'}
-                  onChange={(e) => handleStatusChange(sub.id, e.target.value)}
-                >
-                  <option value="New">New</option>
-                  <option value="Reviewed">Reviewed</option>
-                  <option value="Shortlisted">Shortlisted</option>
-                  <option value="Rejected">Rejected</option>
-                </select>
-              </div>
             </li>
           ))}
         </ul>
