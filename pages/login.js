@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 
@@ -7,64 +7,80 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-export default function LoginPage() {
+export default function Login() {
   const router = useRouter();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // If user is already logged in, redirect to their dashboard
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        redirectBasedOnRole(session.user.id);
+      }
+    });
+  }, []);
+
+  async function redirectBasedOnRole(userId) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('user_id', userId)
+      .single();
+
+    if (data?.role === 'recruiter') router.push('/recruiter-dashboard');
+    else router.push('/candidate-dashboard');
+  }
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
 
-    const { error } = await supabase.auth.signInWithOtp({ email });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
     if (error) {
-      alert('Error sending magic link');
-      console.error(error);
-    } else {
-      alert('Check your email for the magic link');
+      setError(error.message);
+      setLoading(false);
+      return;
     }
 
-    setLoading(false);
+    if (data.user) {
+      await redirectBasedOnRole(data.user.id);
+    }
   };
 
-  // After login, check if user profile exists and redirect accordingly
-  supabase.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN' && session) {
-      const userId = session.user.id;
-
-      // Check if user has profile
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', userId)
-        .single();
-
-      if (error || !data) {
-        // No profile — redirect to profile page
-        router.push('/profile');
-      } else {
-        // Profile exists — redirect to dashboard
-        router.push('/dashboard');
-      }
-    }
-  });
-
   return (
-    <div style={{ padding: '2rem' }}>
+    <div style={{ maxWidth: 400, margin: 'auto', padding: 20 }}>
       <h1>Login</h1>
       <form onSubmit={handleLogin}>
-        <label>Email:</label>
+        <label>Email:</label><br />
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
+          style={{ width: '100%', marginBottom: 10 }}
         />
-        <br /><br />
-        <button type="submit" disabled={loading}>
-          {loading ? 'Sending...' : 'Send Magic Link'}
+
+        <label>Password:</label><br />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          style={{ width: '100%', marginBottom: 10 }}
+        />
+
+        <button type="submit" disabled={loading} style={{ width: '100%' }}>
+          {loading ? 'Logging In...' : 'Login'}
         </button>
+        {error && <p style={{ color: 'red' }}>{error}</p>}
       </form>
     </div>
   );
