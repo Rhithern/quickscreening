@@ -1,52 +1,26 @@
+// /pages/api/invite.js
 import { createClient } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY // Use service role key for admin rights
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'POST') return res.status(405).end();
 
-  const { team_id, email, role = 'member' } = req.body;
+  const { email, team_id, invited_by } = req.body;
 
-  if (!team_id || !email) {
-    return res.status(400).json({ error: 'Missing team_id or email' });
-  }
+  const token = uuidv4();
 
-  try {
-    // Check if user already exists
-    const { data: user, error: userError } = await supabase.auth.admin.getUserByEmail(email);
-    if (userError && userError.code !== 'PGRST116') { // 'PGRST116' = user not found
-      throw userError;
-    }
+  const { error } = await supabase.from('team_invites').insert([
+    { email, team_id, invited_by, token }
+  ]);
 
-    let userId = user?.id;
+  if (error) return res.status(500).json({ error: error.message });
 
-    // Insert into team_members with null user_id if user not found (invited by email)
-    const { error: insertError } = await supabase
-      .from('team_members')
-      .insert([
-        {
-          team_id,
-          user_id: userId || null,
-          email, // keep email for invite tracking
-          role,
-          status: userId ? 'active' : 'pending', // pending until user signs up
-        },
-      ]);
+  // (Optional) Send email with token here using external email service
 
-    if (insertError) {
-      throw insertError;
-    }
-
-    // TODO: Send invitation email with link to join and accept invite
-
-    return res.status(200).json({ message: 'Invite sent successfully' });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: error.message });
-  }
+  res.status(200).json({ message: 'Invite sent', token });
 }
