@@ -1,10 +1,10 @@
-import TeamInviteForm from '../components/TeamInviteForm';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useUser } from '@supabase/auth-helpers-react';
 import TeamInviteForm from '../components/TeamInviteForm';
-import TeamMembersList from '../components/TeamMembersList';  // <--- Added import
+import TeamMembersList from '../components/TeamMembersList';  // You can keep this if you want to show it still
+import TeamMembersManagement from '../components/TeamMembersManagement';  // NEW import
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -114,7 +114,7 @@ export default function RecruiterDashboard() {
         )}
       </section>
 
-      <section>
+      <section style={{ marginBottom: 30 }}>
         <h2>Upcoming Live Interviews</h2>
         {loadingInterviews ? (
           <p>Loading live interviews...</p>
@@ -133,6 +133,23 @@ export default function RecruiterDashboard() {
             ))}
           </ul>
         )}
+      </section>
+
+      {/* Existing Team Invite Form */}
+      <section style={{ marginBottom: 30 }}>
+        <h2>Invite Team Members</h2>
+        <TeamInviteForm />
+      </section>
+
+      {/* Optional: TeamMembersList if you want to keep */}
+      <section style={{ marginBottom: 30 }}>
+        <TeamMembersList />
+      </section>
+
+      {/* NEW: Team Members Management Section */}
+      <section style={{ marginBottom: 30 }}>
+        <h2>Manage Team Members</h2>
+        <TeamMembersManagement />
       </section>
     </div>
   );
