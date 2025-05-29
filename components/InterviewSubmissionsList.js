@@ -9,12 +9,32 @@ const supabase = createClient(
 export default function InterviewSubmissionsList({ recruiterId }) {
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [jobs, setJobs] = useState([]);
+  const [selectedJobId, setSelectedJobId] = useState(null);
+
+  useEffect(() => {
+    if (!recruiterId) return;
+
+    const fetchJobs = async () => {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id, title')
+        .eq('recruiter_id', recruiterId);
+
+      if (error) console.error('Error fetching jobs:', error);
+      else setJobs(data);
+    };
+
+    fetchJobs();
+  }, [recruiterId]);
 
   useEffect(() => {
     if (!recruiterId) return;
 
     const fetchSubmissions = async () => {
-      const { data, error } = await supabase
+      setLoading(true);
+
+      let query = supabase
         .from('interview_submissions')
         .select(`
           id,
@@ -23,26 +43,49 @@ export default function InterviewSubmissionsList({ recruiterId }) {
           answer_video_url,
           submitted_at,
           user_id,
-          job:jobs(title, recruiter_id)
+          job:jobs(id, title, recruiter_id)
         `)
         .eq('job.recruiter_id', recruiterId)
         .order('submitted_at', { ascending: false });
 
-      if (error) console.error(error);
+      if (selectedJobId) {
+        query = query.eq('job.id', selectedJobId);
+      }
+
+      const { data, error } = await query;
+
+      if (error) console.error('Error fetching submissions:', error);
       else setSubmissions(data);
 
       setLoading(false);
     };
 
     fetchSubmissions();
-  }, [recruiterId]);
-
-  if (loading) return <p>Loading submissions...</p>;
+  }, [recruiterId, selectedJobId]);
 
   return (
     <div>
       <h2>Candidate Interview Submissions</h2>
-      {submissions.length === 0 ? (
+
+      <div style={{ marginBottom: 20 }}>
+        <label htmlFor="jobFilter"><strong>Filter by Job:</strong>{' '}</label>
+        <select
+          id="jobFilter"
+          onChange={(e) => setSelectedJobId(e.target.value || null)}
+          value={selectedJobId || ''}
+        >
+          <option value="">All Jobs</option>
+          {jobs.map((job) => (
+            <option key={job.id} value={job.id}>
+              {job.title}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {loading ? (
+        <p>Loading submissions...</p>
+      ) : submissions.length === 0 ? (
         <p>No submissions found.</p>
       ) : (
         <ul>
