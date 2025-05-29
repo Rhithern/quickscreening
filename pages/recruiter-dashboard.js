@@ -1,3 +1,4 @@
+import TeamInviteForm from '../components/TeamInviteForm';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
@@ -89,6 +90,8 @@ export default function RecruiterDashboard() {
           📅 Schedule Live Interview
         </a>
       </nav>
+
+<TeamInviteForm />
 
       <section style={{ marginBottom: 30 }}>
         <h2>Your Jobs</h2>
