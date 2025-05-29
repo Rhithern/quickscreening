@@ -5,7 +5,6 @@ import { useUser } from '@supabase/auth-helpers-react';
 import TeamInviteForm from '../components/TeamInviteForm';
 import TeamMembersList from '../components/TeamMembersList';
 import TeamMembersManagement from '../components/TeamMembersManagement';
-import InterviewSubmissionsList from '../components/InterviewSubmissionsList'; // <-- NEW
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -13,8 +12,9 @@ const supabase = createClient(
 );
 
 export default function RecruiterDashboard() {
-  const user = useUser();
   const router = useRouter();
+  const user = useUser();
+  const [checkingAccess, setCheckingAccess] = useState(true);
 
   const [jobs, setJobs] = useState([]);
   const [loadingJobs, setLoadingJobs] = useState(true);
@@ -22,10 +22,34 @@ export default function RecruiterDashboard() {
   const [loadingInterviews, setLoadingInterviews] = useState(true);
 
   useEffect(() => {
-    if (!user) {
-      router.push('/login');
-      return;
+    async function verifyAccess() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.push('/login');
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('user_id', session.user.id)
+        .single();
+
+      if (profile?.role !== 'recruiter') {
+        router.push('/login');
+      } else {
+        setCheckingAccess(false);
+      }
     }
+
+    verifyAccess();
+  }, [router]);
+
+  useEffect(() => {
+    if (!user) return;
 
     async function fetchData() {
       const { data: profileData, error: profileError } = await supabase
@@ -46,11 +70,9 @@ export default function RecruiterDashboard() {
         .select('*')
         .eq('recruiter_id', profileData.id);
 
-      if (jobsError) {
-        console.error(jobsError);
-      } else {
-        setJobs(jobsData);
-      }
+      if (jobsError) console.error(jobsError);
+      else setJobs(jobsData);
+
       setLoadingJobs(false);
 
       const { data: interviewsData, error: interviewsError } = await supabase
@@ -66,71 +88,58 @@ export default function RecruiterDashboard() {
         .gte('scheduled_at', new Date().toISOString())
         .order('scheduled_at', { ascending: true });
 
-      if (interviewsError) {
-        console.error(interviewsError);
-      } else {
-        setLiveInterviews(interviewsData);
-      }
+      if (interviewsError) console.error(interviewsError);
+      else setLiveInterviews(interviewsData);
+
       setLoadingInterviews(false);
     }
 
     fetchData();
-  }, [user, router]);
+  }, [user]);
 
-  if (!user) return null;
+  if (checkingAccess || !user) return <p>Checking access...</p>;
 
   return (
     <div style={{ maxWidth: 800, margin: 'auto', padding: 20 }}>
       <h1>Recruiter Dashboard</h1>
 
       <nav style={{ marginBottom: 20 }}>
-        <a href="/post-job" style={{ marginRight: 15 }}>
-          ➕ Post New Job
-        </a>
-        <a href="/schedule-live-interview" style={{ marginRight: 15 }}>
-          📅 Schedule Live Interview
-        </a>
+        <a href="/post-job" style={{ marginRight: 15 }}>➕ Post New Job</a>
+        <a href="/schedule-live-interview" style={{ marginRight: 15 }}>📅 Schedule Live Interview</a>
       </nav>
 
       <section style={{ marginBottom: 30 }}>
         <h2>Your Jobs</h2>
-        {loadingJobs ? (
-          <p>Loading jobs...</p>
-        ) : jobs.length === 0 ? (
-          <p>You have not posted any jobs yet.</p>
-        ) : (
-          <ul>
-            {jobs.map((job) => (
-              <li key={job.id} style={{ marginBottom: 15 }}>
-                <strong>{job.title}</strong> <br />
-                <a href={`/job/${job.id}`} target="_blank" rel="noopener noreferrer">
-                  View job link
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
+        {loadingJobs ? <p>Loading jobs...</p> :
+          jobs.length === 0 ? <p>You have not posted any jobs yet.</p> :
+            <ul>
+              {jobs.map((job) => (
+                <li key={job.id} style={{ marginBottom: 15 }}>
+                  <strong>{job.title}</strong><br />
+                  <a href={`/job/${job.id}`} target="_blank" rel="noopener noreferrer">
+                    View job link
+                  </a>
+                </li>
+              ))}
+            </ul>
+        }
       </section>
 
       <section style={{ marginBottom: 30 }}>
         <h2>Upcoming Live Interviews</h2>
-        {loadingInterviews ? (
-          <p>Loading live interviews...</p>
-        ) : liveInterviews.length === 0 ? (
-          <p>No upcoming live interviews scheduled.</p>
-        ) : (
-          <ul>
-            {liveInterviews.map((interview) => (
-              <li key={interview.id} style={{ marginBottom: 15 }}>
-                <strong>Job:</strong> {interview.job?.title || 'Unknown'} <br />
-                <strong>Candidate ID:</strong> {interview.candidate_id} <br />
-                <strong>Scheduled At:</strong>{' '}
-                {new Date(interview.scheduled_at).toLocaleString()} <br />
-                <strong>Status:</strong> {interview.status}
-              </li>
-            ))}
-          </ul>
-        )}
+        {loadingInterviews ? <p>Loading live interviews...</p> :
+          liveInterviews.length === 0 ? <p>No upcoming live interviews scheduled.</p> :
+            <ul>
+              {liveInterviews.map((interview) => (
+                <li key={interview.id} style={{ marginBottom: 15 }}>
+                  <strong>Job:</strong> {interview.job?.title || 'Unknown'}<br />
+                  <strong>Candidate ID:</strong> {interview.candidate_id}<br />
+                  <strong>Scheduled At:</strong> {new Date(interview.scheduled_at).toLocaleString()}<br />
+                  <strong>Status:</strong> {interview.status}
+                </li>
+              ))}
+            </ul>
+        }
       </section>
 
       <section style={{ marginBottom: 30 }}>
@@ -145,12 +154,6 @@ export default function RecruiterDashboard() {
       <section style={{ marginBottom: 30 }}>
         <h2>Manage Team Members</h2>
         <TeamMembersManagement />
-      </section>
-
-      {/* 🔥 NEW: View Candidate Interview Submissions */}
-      <section style={{ marginBottom: 30 }}>
-        <h2>Interview Submissions</h2>
-        <InterviewSubmissionsList />
       </section>
     </div>
   );
