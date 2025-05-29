@@ -10,68 +10,50 @@ const supabase = createClient(
 export default function TeamMembersList() {
   const user = useUser();
   const [members, setMembers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!user) return;
 
     const loadTeam = async () => {
-      setLoading(true);
-      setError(null);
+      // Get profile to access team_id
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('team_id')
+        .eq('user_id', user.id)
+        .single();
 
-      try {
-        // Get user profile including team_id
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('team_id')
-          .eq('user_id', user.id)
-          .single();
-
-        if (profileError || !profile?.team_id) {
-          setError('Could not fetch your team information');
-          setLoading(false);
-          return;
-        }
-
-        // Get all team members in this team
-        const { data: teamData, error: teamError } = await supabase
-          .from('team_members')
-          .select('id, role, profiles(name, email)')
-          .eq('team_id', profile.team_id);
-
-        if (teamError) {
-          setError('Error fetching team members');
-        } else {
-          setMembers(teamData);
-        }
-      } catch (err) {
-        setError('Unexpected error');
+      if (profileError || !profile) {
+        console.error('Error loading profile:', profileError);
+        return;
       }
-      setLoading(false);
+
+      // Fetch team members for this team_id
+      const { data: teamData, error: teamError } = await supabase
+        .from('team_members')
+        .select('id, role, profiles(name, email)')
+        .eq('team_id', profile.team_id);
+
+      if (teamError) {
+        console.error('Error loading team members:', teamError);
+        return;
+      }
+
+      setMembers(teamData);
     };
 
     loadTeam();
   }, [user]);
 
-  if (loading) return <p>Loading team members...</p>;
-  if (error) return <p style={{ color: 'red' }}>{error}</p>;
-
   return (
-    <div>
-      <h3>Team Members</h3>
-      {members.length === 0 ? (
-        <p>No team members found.</p>
-      ) : (
-        <ul>
-          {members.map((member) => (
-            <li key={member.id}>
-              {member.profiles?.name || 'Unnamed'} - {member.role}
-            </li>
-          ))}
-        </ul>
-      )}
+    <div style={{ marginTop: 30 }}>
+      <h2>Team Members</h2>
+      <ul>
+        {members.map((member) => (
+          <li key={member.id}>
+            <strong>{member.profiles?.name || 'Unnamed'}</strong> – {member.role}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
-
