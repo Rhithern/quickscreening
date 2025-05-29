@@ -43,6 +43,7 @@ export default function InterviewSubmissionsList({ recruiterId }) {
           answer_video_url,
           submitted_at,
           user_id,
+          status,
           job:jobs(id, title, recruiter_id)
         `)
         .eq('job.recruiter_id', recruiterId)
@@ -62,6 +63,25 @@ export default function InterviewSubmissionsList({ recruiterId }) {
 
     fetchSubmissions();
   }, [recruiterId, selectedJobId]);
+
+  const handleStatusChange = async (submissionId, newStatus) => {
+    const { error } = await supabase
+      .from('interview_submissions')
+      .update({ status: newStatus })
+      .eq('id', submissionId);
+
+    if (error) {
+      console.error('Error updating status:', error);
+      return;
+    }
+
+    // Update local state
+    setSubmissions((prev) =>
+      prev.map((sub) =>
+        sub.id === submissionId ? { ...sub, status: newStatus } : sub
+      )
+    );
+  };
 
   return (
     <div>
@@ -100,6 +120,18 @@ export default function InterviewSubmissionsList({ recruiterId }) {
               <strong>Answer:</strong> <br />
               <video src={sub.answer_video_url} controls width="300" />
               <p><em>Submitted: {new Date(sub.submitted_at).toLocaleString()}</em></p>
+              <div>
+                <label><strong>Status: </strong></label>
+                <select
+                  value={sub.status || 'New'}
+                  onChange={(e) => handleStatusChange(sub.id, e.target.value)}
+                >
+                  <option value="New">New</option>
+                  <option value="Reviewed">Reviewed</option>
+                  <option value="Shortlisted">Shortlisted</option>
+                  <option value="Rejected">Rejected</option>
+                </select>
+              </div>
             </li>
           ))}
         </ul>
