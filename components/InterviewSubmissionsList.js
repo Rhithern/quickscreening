@@ -13,29 +13,32 @@ export default function InterviewSubmissionsList({ recruiterId }) {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [lastViewedAt, setLastViewedAt] = useState(null);
 
   useEffect(() => {
     if (!recruiterId) return;
 
-    const fetchJobsAndSubmissions = async () => {
-      setLoading(true);
-
-      const { data: jobsData, error: jobsError } = await supabase
-        .from('jobs')
-        .select('id, title')
-        .eq('recruiter_id', recruiterId);
-
-      if (jobsError) {
-        console.error(jobsError);
-        return;
-      }
-      setJobs(jobsData);
-
-      await fetchSubmissions(null);
-    };
-
+    const now = new Date().toISOString();
+    setLastViewedAt(now); // save current view time
     fetchJobsAndSubmissions();
   }, [recruiterId]);
+
+  const fetchJobsAndSubmissions = async () => {
+    setLoading(true);
+
+    const { data: jobsData, error: jobsError } = await supabase
+      .from('jobs')
+      .select('id, title')
+      .eq('recruiter_id', recruiterId);
+
+    if (jobsError) {
+      console.error(jobsError);
+      return;
+    }
+    setJobs(jobsData);
+
+    await fetchSubmissions(null);
+  };
 
   const fetchSubmissions = async (jobId = null) => {
     let query = supabase
@@ -89,6 +92,10 @@ export default function InterviewSubmissionsList({ recruiterId }) {
     }
   };
 
+  const newSubmissionsCount = submissions.filter(
+    (sub) => lastViewedAt && new Date(sub.submitted_at) > new Date(lastViewedAt)
+  ).length;
+
   return (
     <div>
       <h2>Candidate Interview Submissions</h2>
@@ -105,39 +112,60 @@ export default function InterviewSubmissionsList({ recruiterId }) {
         </select>
       </label>
 
+      {newSubmissionsCount > 0 && (
+        <div style={{
+          backgroundColor: '#d1e7dd',
+          color: '#0f5132',
+          padding: '10px',
+          margin: '15px 0',
+          borderRadius: '6px'
+        }}>
+          🔔 {newSubmissionsCount} new submission{submissions.length > 1 ? 's' : ''} since your last visit!
+        </div>
+      )}
+
       {loading ? (
         <p>Loading submissions...</p>
       ) : submissions.length === 0 ? (
         <p>No submissions found.</p>
       ) : (
         <ul>
-          {submissions.map((sub) => (
-            <li key={sub.id} style={{ marginBottom: '30px', borderBottom: '1px solid #ccc', paddingBottom: '20px' }}>
-              <strong>Job:</strong> {sub.job?.title || 'N/A'} <br />
-              <strong>Question:</strong> {sub.question_text} <br />
-              {sub.question_video_url && (
-                <video src={sub.question_video_url} controls width="300" />
-              )}
-              <br />
-              <strong>Answer:</strong> <br />
-              <video src={sub.answer_video_url} controls width="300" />
-              <p><em>Submitted: {new Date(sub.submitted_at).toLocaleString()}</em></p>
+          {submissions.map((sub) => {
+            const isNew = lastViewedAt && new Date(sub.submitted_at) > new Date(lastViewedAt);
 
-              <label>
-                Status:{' '}
-                <select
-                  value={sub.status || 'Pending'}
-                  onChange={(e) => updateStatus(sub.id, e.target.value)}
-                >
-                  {STATUS_OPTIONS.map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </li>
-          ))}
+            return (
+              <li key={sub.id} style={{
+                marginBottom: '30px',
+                borderBottom: '1px solid #ccc',
+                paddingBottom: '20px',
+                backgroundColor: isNew ? '#fff3cd' : 'transparent'
+              }}>
+                <strong>Job:</strong> {sub.job?.title || 'N/A'} <br />
+                <strong>Question:</strong> {sub.question_text} <br />
+                {sub.question_video_url && (
+                  <video src={sub.question_video_url} controls width="300" />
+                )}
+                <br />
+                <strong>Answer:</strong> <br />
+                <video src={sub.answer_video_url} controls width="300" />
+                <p><em>Submitted: {new Date(sub.submitted_at).toLocaleString()}</em></p>
+
+                <label>
+                  Status:{' '}
+                  <select
+                    value={sub.status || 'Pending'}
+                    onChange={(e) => updateStatus(sub.id, e.target.value)}
+                  >
+                    {STATUS_OPTIONS.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
