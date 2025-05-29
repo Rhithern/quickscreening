@@ -12,16 +12,17 @@ export default function CandidateDashboard() {
     return null;
   }
 
+  // Sample interview question object
   const sampleQuestion = {
     text: "Tell us about a challenging project you worked on.",
-    videoUrl: null,
+    videoUrl: null, // can be a URL string if video question exists
   };
 
   return (
     <div style={{ maxWidth: 700, margin: 'auto', padding: 20 }}>
       <h1>Candidate Dashboard</h1>
 
-      {/* Other candidate dashboard components here */}
+      {/* Other candidate dashboard components can go here */}
 
       <section style={{ marginTop: 40 }}>
         <h2>One-Way Interview</h2>
