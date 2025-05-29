@@ -3,8 +3,9 @@ import { useRouter } from 'next/router';
 import { createClient } from '@supabase/supabase-js';
 import { useUser } from '@supabase/auth-helpers-react';
 import TeamInviteForm from '../components/TeamInviteForm';
-import TeamMembersList from '../components/TeamMembersList';  // You can keep this if you want to show it still
-import TeamMembersManagement from '../components/TeamMembersManagement';  // NEW import
+import TeamMembersList from '../components/TeamMembersList';
+import TeamMembersManagement from '../components/TeamMembersManagement';
+import InterviewSubmissionsList from '../components/InterviewSubmissionsList'; // <-- NEW
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -27,7 +28,6 @@ export default function RecruiterDashboard() {
     }
 
     async function fetchData() {
-      // Get recruiter profile id
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('id')
@@ -41,7 +41,6 @@ export default function RecruiterDashboard() {
         return;
       }
 
-      // Fetch jobs
       const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select('*')
@@ -54,7 +53,6 @@ export default function RecruiterDashboard() {
       }
       setLoadingJobs(false);
 
-      // Fetch upcoming live interviews (only future dates)
       const { data: interviewsData, error: interviewsError } = await supabase
         .from('live_interviews')
         .select(`
@@ -65,7 +63,7 @@ export default function RecruiterDashboard() {
           job:jobs(title)
         `)
         .eq('recruiter_id', profileData.id)
-        .gte('scheduled_at', new Date().toISOString())  // only upcoming
+        .gte('scheduled_at', new Date().toISOString())
         .order('scheduled_at', { ascending: true });
 
       if (interviewsError) {
@@ -135,21 +133,24 @@ export default function RecruiterDashboard() {
         )}
       </section>
 
-      {/* Existing Team Invite Form */}
       <section style={{ marginBottom: 30 }}>
         <h2>Invite Team Members</h2>
         <TeamInviteForm />
       </section>
 
-      {/* Optional: TeamMembersList if you want to keep */}
       <section style={{ marginBottom: 30 }}>
         <TeamMembersList />
       </section>
 
-      {/* NEW: Team Members Management Section */}
       <section style={{ marginBottom: 30 }}>
         <h2>Manage Team Members</h2>
         <TeamMembersManagement />
+      </section>
+
+      {/* 🔥 NEW: View Candidate Interview Submissions */}
+      <section style={{ marginBottom: 30 }}>
+        <h2>Interview Submissions</h2>
+        <InterviewSubmissionsList />
       </section>
     </div>
   );
