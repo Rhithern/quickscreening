@@ -6,6 +6,8 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+const STATUS_OPTIONS = ['Pending', 'Reviewed', 'Shortlisted', 'Rejected'];
+
 export default function InterviewSubmissionsList({ recruiterId }) {
   const [submissions, setSubmissions] = useState([]);
   const [jobs, setJobs] = useState([]);
@@ -18,7 +20,6 @@ export default function InterviewSubmissionsList({ recruiterId }) {
     const fetchJobsAndSubmissions = async () => {
       setLoading(true);
 
-      // Fetch jobs for this recruiter
       const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select('id, title')
@@ -30,7 +31,6 @@ export default function InterviewSubmissionsList({ recruiterId }) {
       }
       setJobs(jobsData);
 
-      // Fetch all submissions initially
       await fetchSubmissions(null);
     };
 
@@ -47,6 +47,7 @@ export default function InterviewSubmissionsList({ recruiterId }) {
         answer_video_url,
         submitted_at,
         user_id,
+        status,
         job:jobs(id, title, recruiter_id)
       `)
       .order('submitted_at', { ascending: false });
@@ -69,6 +70,23 @@ export default function InterviewSubmissionsList({ recruiterId }) {
     const jobId = e.target.value || null;
     setSelectedJobId(jobId);
     fetchSubmissions(jobId);
+  };
+
+  const updateStatus = async (submissionId, newStatus) => {
+    const { error } = await supabase
+      .from('interview_submissions')
+      .update({ status: newStatus })
+      .eq('id', submissionId);
+
+    if (error) {
+      console.error('Failed to update status:', error);
+    } else {
+      setSubmissions((prev) =>
+        prev.map((sub) =>
+          sub.id === submissionId ? { ...sub, status: newStatus } : sub
+        )
+      );
+    }
   };
 
   return (
@@ -94,7 +112,7 @@ export default function InterviewSubmissionsList({ recruiterId }) {
       ) : (
         <ul>
           {submissions.map((sub) => (
-            <li key={sub.id} style={{ marginBottom: '20px' }}>
+            <li key={sub.id} style={{ marginBottom: '30px', borderBottom: '1px solid #ccc', paddingBottom: '20px' }}>
               <strong>Job:</strong> {sub.job?.title || 'N/A'} <br />
               <strong>Question:</strong> {sub.question_text} <br />
               {sub.question_video_url && (
@@ -104,6 +122,20 @@ export default function InterviewSubmissionsList({ recruiterId }) {
               <strong>Answer:</strong> <br />
               <video src={sub.answer_video_url} controls width="300" />
               <p><em>Submitted: {new Date(sub.submitted_at).toLocaleString()}</em></p>
+
+              <label>
+                Status:{' '}
+                <select
+                  value={sub.status || 'Pending'}
+                  onChange={(e) => updateStatus(sub.id, e.target.value)}
+                >
+                  {STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </li>
           ))}
         </ul>
