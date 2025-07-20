@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Upload Answer</title>
+  <style>
+    #progressBar {
+      width: 100%;
+      background-color: #f3f3f3;
+    }
+    #progressBarFill {
+      width: 0%;
+      height: 20px;
+      background-color: #4caf50;
+      text-align: center;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <h2>Submit Your Answer</h2>
+  <form id="uploadForm" enctype="multipart/form-data">
+    <input type="file" name="video" id="video" accept=".mp4,.webm,.ogg,.mp3" required><br><br>
+    <button type="submit">Upload</button>
+  </form>
+
+  <div id="progressBar" style="margin-top: 10px;">
+    <div id="progressBarFill">0%</div>
+  </div>
+
+  <p id="status"></p>
+
+  <script>
+    document.getElementById('uploadForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      const fileInput = document.getElementById('video');
+      const file = fileInput.files[0];
+      const allowedTypes = ['video/mp4', 'video/webm', 'audio/ogg', 'audio/mpeg'];
+
+      if (!file) {
+        alert("Please select a file.");
+        return;
+      }
+
+      if (!allowedTypes.includes(file.type)) {
+        alert("Unsupported file type. Use .mp4, .webm, .ogg, or .mp3");
+        return;
+      }
+
+      if (file.size > 200 * 1024 * 1024) {
+        alert("File too large. Max 200MB.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('video', file);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'upload_video.php', true);
+
+      xhr.upload.onprogress = function (e) {
+        if (e.lengthComputable) {
+          const percent = Math.round((e.loaded / e.total) * 100);
+          const progressBarFill = document.getElementById('progressBarFill');
+          progressBarFill.style.width = percent + '%';
+          progressBarFill.textContent = percent + '%';
+        }
+      };
+
+      xhr.onload = function () {
+        document.getElementById('status').textContent = xhr.responseText;
+        document.getElementById('progressBarFill').style.backgroundColor = '#2196f3';
+      };
+
+      xhr.onerror = function () {
+        alert('Upload failed. Please try again.');
+      };
+
+      xhr.send(formData);
+    });
+  </script>
+</body>
+</html>
