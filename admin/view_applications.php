@@ -4,65 +4,91 @@ require_once '../includes/db.php';
 require_once '../includes/functions.php';
 require_once '../includes/header.php';
 
-// Fetch applications with position info
-$stmt = $pdo->query("
+// Validate and fetch application
+if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
+    die("Invalid application ID.");
+}
+
+$app_id = $_GET['id'];
+
+// Fetch application with position
+$stmt = $pdo->prepare("
     SELECT a.*, p.title AS position_title 
     FROM applications a
     JOIN positions p ON a.position_id = p.id
-    ORDER BY a.created_at DESC
+    WHERE a.id = ?
 ");
-$applications = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$stmt->execute([$app_id]);
+$app = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$app) {
+    die("Application not found.");
+}
+
+// Handle status update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['status'])) {
+    $newStatus = $_POST['status'];
+    $allowed = ['Pending', 'Accepted', 'Rejected'];
+
+    if (in_array($newStatus, $allowed)) {
+        $update = $pdo->prepare("UPDATE applications SET status = ? WHERE id = ?");
+        $update->execute([$newStatus, $app_id]);
+        $app['status'] = $newStatus;
+        $message = "Status updated to <strong>$newStatus</strong>.";
+    }
+}
 ?>
 
 <div class="container py-5">
-    <h2 class="mb-4">Candidate Applications</h2>
+    <h2 class="mb-4">View Application</h2>
 
-    <?php if (count($applications) === 0): ?>
-        <div class="alert alert-info">No applications submitted yet.</div>
-    <?php else: ?>
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th>#</th>
-                        <th>Candidate Name</th>
-                        <th>Email</th>
-                        <th>Position</th>
-                        <th>Submitted At</th>
-                        <th>Status</th>
-                        <th>View</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($applications as $index => $app): ?>
-                        <tr>
-                            <td><?= $index + 1 ?></td>
-                            <td><?= htmlspecialchars($app['name']) ?></td>
-                            <td><?= htmlspecialchars($app['email']) ?></td>
-                            <td><?= htmlspecialchars($app['position_title']) ?></td>
-                            <td><?= htmlspecialchars($app['created_at']) ?></td>
-                            <td>
-                                <?php
-                                $status = $app['status'] ?? 'Pending';
-                                $badge = match($status) {
-                                    'Accepted' => 'success',
-                                    'Rejected' => 'danger',
-                                    default => 'secondary',
-                                };
-                                ?>
-                                <span class="badge bg-<?= $badge ?>"><?= $status ?></span>
-                            </td>
-                            <td>
-                                <a href="view_application.php?id=<?= $app['id'] ?>" class="btn btn-sm btn-outline-primary">
-                                    Review
-                                </a>
-                            </td>
-                        </tr>
-                    <?php endforeach ?>
-                </tbody>
-            </table>
-        </div>
+    <?php if (isset($message)): ?>
+        <div class="alert alert-success"><?= $message ?></div>
     <?php endif; ?>
+
+    <div class="card mb-4">
+        <div class="card-header">Candidate Info</div>
+        <div class="card-body">
+            <p><strong>Name:</strong> <?= htmlspecialchars($app['name']) ?></p>
+            <p><strong>Email:</strong> <?= htmlspecialchars($app['email']) ?></p>
+            <p><strong>Position:</strong> <?= htmlspecialchars($app['position_title']) ?></p>
+            <p><strong>Submitted At:</strong> <?= htmlspecialchars($app['created_at']) ?></p>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">Application Details</div>
+        <div class="card-body">
+            <?php if (!empty($app['resume_link'])): ?>
+                <p><strong>Resume:</strong> <a href="<?= htmlspecialchars($app['resume_link']) ?>" target="_blank">View Resume</a></p>
+            <?php endif; ?>
+            <?php if (!empty($app['video_link'])): ?>
+                <p><strong>Video Intro:</strong> <a href="<?= htmlspecialchars($app['video_link']) ?>" target="_blank">Watch Video</a></p>
+            <?php endif; ?>
+
+            <?php if (!empty($app['answers'])): ?>
+                <p><strong>Answers:</strong></p>
+                <pre class="bg-light p-3"><?= htmlspecialchars($app['answers']) ?></pre>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Update Status</div>
+        <div class="card-body">
+            <form method="post">
+                <div class="mb-3">
+                    <select name="status" class="form-select" required>
+                        <option value="Pending" <?= $app['status'] === 'Pending' ? 'selected' : '' ?>>Pending</option>
+                        <option value="Accepted" <?= $app['status'] === 'Accepted' ? 'selected' : '' ?>>Accepted</option>
+                        <option value="Rejected" <?= $app['status'] === 'Rejected' ? 'selected' : '' ?>>Rejected</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">Update Status</button>
+                <a href="view_applications.php" class="btn btn-secondary">Back</a>
+            </form>
+        </div>
+    </div>
 </div>
 
 <?php require_once '../includes/footer.php'; ?>
