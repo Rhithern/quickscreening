@@ -1,81 +1,142 @@
 <?php
-require_once __DIR__ . '/../includes/init.php';
 require_once __DIR__ . '/../includes/auth_admin.php';
-
-$pageTitle = "Export Reports";
+require_once __DIR__ . '/../includes/db_connect.php';
 require_once __DIR__ . '/../includes/header.php';
+require_once __DIR__ . '/../vendor/autoload.php'; // For PHPMailer
+require_once __DIR__ . '/../config.php';
 
-// Handle export request
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export'])) {
-    $format = $_POST['format'] ?? 'csv';
+$pageTitle = 'Export Reports';
 
-    // Fetch applications
-    $stmt = $pdo->query("SELECT a.id, a.full_name, a.email, a.status, a.score, a.submission_time, p.title AS position
-                         FROM applications a
-                         JOIN positions p ON a.position_id = p.id
-                         ORDER BY a.submission_time DESC");
+// Handle filter submission
+$positionFilter = $_GET['position'] ?? '';
+$fromDate = $_GET['from_date'] ?? '';
+$toDate = $_GET['to_date'] ?? '';
 
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// Fetch positions for filter dropdown
+$positions = $pdo->query("SELECT DISTINCT title FROM positions")->fetchAll(PDO::FETCH_COLUMN);
 
-    if ($format === 'csv') {
-        header('Content-Type: text/csv');
-        header('Content-Disposition: attachment; filename="interview_reports.csv"');
-        $output = fopen('php://output', 'w');
+// Build SQL with optional filters
+$sql = "SELECT i.id, i.candidate_name, i.email, i.position_applied, i.score, i.completed_at 
+        FROM interviews i WHERE 1=1";
+$params = [];
 
-        if (!empty($rows)) {
-            fputcsv($output, array_keys($rows[0]));
-            foreach ($rows as $row) {
-                fputcsv($output, $row);
-            }
-        } else {
-            fputcsv($output, ['No data available']);
-        }
-        fclose($output);
-        exit;
+if (!empty($positionFilter)) {
+    $sql .= " AND i.position_applied = :position";
+    $params['position'] = $positionFilter;
+}
+if (!empty($fromDate)) {
+    $sql .= " AND i.completed_at >= :from_date";
+    $params['from_date'] = $fromDate . " 00:00:00";
+}
+if (!empty($toDate)) {
+    $sql .= " AND i.completed_at <= :to_date";
+    $params['to_date'] = $toDate . " 23:59:59";
+}
 
-    } elseif ($format === 'xls') {
-        header('Content-Type: application/vnd.ms-excel');
-        header('Content-Disposition: attachment; filename="interview_reports.xls"');
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+$interviews = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        echo "<table border='1'>";
-        if (!empty($rows)) {
-            echo "<tr>";
-            foreach (array_keys($rows[0]) as $col) {
-                echo "<th>" . htmlspecialchars($col) . "</th>";
-            }
-            echo "</tr>";
+// Export as CSV and email if requested
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    $filename = 'interview_report_' . date('Ymd_His') . '.csv';
+    $filepath = __DIR__ . '/../exports/' . $filename;
 
-            foreach ($rows as $row) {
-                echo "<tr>";
-                foreach ($row as $cell) {
-                    echo "<td>" . htmlspecialchars($cell) . "</td>";
-                }
-                echo "</tr>";
-            }
-        } else {
-            echo "<tr><td colspan='6'>No data available</td></tr>";
-        }
-        echo "</table>";
-        exit;
+    $fp = fopen($filepath, 'w');
+    fputcsv($fp, array_keys($interviews[0] ?? []));
+    foreach ($interviews as $row) {
+        fputcsv($fp, $row);
     }
+    fclose($fp);
+
+    // Send email with CSV attachment
+    $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+    try {
+        $mail->setFrom(ADMIN_EMAIL, SITE_NAME);
+        $mail->addAddress(ADMIN_EMAIL);
+        $mail->Subject = 'Interview Report - ' . date('Y-m-d');
+        $mail->Body = "Hi Admin,\n\nAttached is the exported interview report.\n\nRegards,\nHR Bot";
+        $mail->addAttachment($filepath);
+        $mail->isSMTP();
+        $mail->Host = SMTP_HOST;
+        $mail->SMTPAuth = true;
+        $mail->Username = SMTP_USER;
+        $mail->Password = SMTP_PASS;
+        $mail->SMTPSecure = 'tls';
+        $mail->Port = 587;
+        $mail->send();
+        $emailStatus = "✅ Report emailed to admin.";
+    } catch (Exception $e) {
+        $emailStatus = "❌ Email sending failed: {$mail->ErrorInfo}";
+    }
+
+    // Output file for download
+    header('Content-Type: text/csv');
+    header("Content-Disposition: attachment; filename=\"$filename\"");
+    readfile($filepath);
+    exit;
 }
 ?>
 
-<div class="card">
-  <div class="card-body">
-    <h2 class="mb-3">Export Interview Reports</h2>
-    <form method="post">
-      <div class="mb-3">
-        <label for="format" class="form-label">Choose Export Format:</label>
-        <select name="format" id="format" class="form-select">
-          <option value="csv">CSV</option>
-          <option value="xls">Excel (.xls)</option>
-        </select>
-      </div>
-      <button type="submit" name="export" class="btn btn-success">Export</button>
-    </form>
+<h2>Export Interview Reports</h2>
+
+<form method="get" class="row g-3 mb-4">
+  <div class="col-md-4">
+    <label for="position" class="form-label">Filter by Position</label>
+    <select name="position" id="position" class="form-select">
+      <option value="">-- All Positions --</option>
+      <?php foreach ($positions as $pos): ?>
+        <option value="<?= htmlspecialchars($pos) ?>" <?= $pos == $positionFilter ? 'selected' : '' ?>><?= htmlspecialchars($pos) ?></option>
+      <?php endforeach; ?>
+    </select>
   </div>
-</div>
+  <div class="col-md-3">
+    <label for="from_date" class="form-label">From Date</label>
+    <input type="date" name="from_date" value="<?= htmlspecialchars($fromDate) ?>" class="form-control">
+  </div>
+  <div class="col-md-3">
+    <label for="to_date" class="form-label">To Date</label>
+    <input type="date" name="to_date" value="<?= htmlspecialchars($toDate) ?>" class="form-control">
+  </div>
+  <div class="col-md-2 d-grid">
+    <label class="form-label">&nbsp;</label>
+    <button type="submit" name="export" value="csv" class="btn btn-primary">Export CSV & Email</button>
+  </div>
+</form>
+
+<?php if (!empty($emailStatus)): ?>
+  <div class="alert alert-info"><?= htmlspecialchars($emailStatus) ?></div>
+<?php endif; ?>
+
+<?php if (count($interviews)): ?>
+  <div class="table-responsive">
+    <table class="table table-bordered table-sm">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Position</th>
+          <th>Score</th>
+          <th>Completed At</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php foreach ($interviews as $interview): ?>
+          <tr>
+            <td><?= $interview['id'] ?></td>
+            <td><?= htmlspecialchars($interview['candidate_name']) ?></td>
+            <td><?= htmlspecialchars($interview['email']) ?></td>
+            <td><?= htmlspecialchars($interview['position_applied']) ?></td>
+            <td><?= $interview['score'] ?></td>
+            <td><?= $interview['completed_at'] ?></td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+<?php else: ?>
+  <p>No interview records found for the selected criteria.</p>
+<?php endif; ?>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-
