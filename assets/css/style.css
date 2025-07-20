@@ -22,3 +22,8 @@ body.bg-dark .card {
   background-color: #1e1e1e !important;
   border-color: #333 !important;
 }
+
+body.bg-dark footer {
+  background-color: #1f1f1f;
+  color: #bbb;
+}
