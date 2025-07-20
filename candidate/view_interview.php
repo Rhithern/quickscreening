@@ -1,16 +1,16 @@
 <?php
 session_start();
-require_once '../includes/auth.php'; // candidate auth check
+require_once '../includes/auth.php';  // Checks candidate login
 require_once '../includes/db.php';
 
 if (!isset($_GET['interview_id'])) {
-    die('Interview ID required');
+    die('Interview ID is required.');
 }
 
 $interviewId = intval($_GET['interview_id']);
-$userId = $_SESSION['user_id'];
+$userId = $_SESSION['user_id'];  // Candidate user ID from session
 
-// Verify this interview belongs to the logged-in candidate
+// Verify candidate owns the interview
 $stmt = $pdo->prepare("SELECT video_filename FROM interviews WHERE id = ? AND candidate_id = ?");
 $stmt->execute([$interviewId, $userId]);
 $interview = $stmt->fetch();
@@ -33,4 +33,3 @@ include '../includes/header.php';
 </video>
 
 <?php include '../includes/footer.php'; ?>
-
