@@ -2,32 +2,34 @@
 // video_stream.php
 
 session_start();
-require_once 'includes/auth.php';   // your auth system, check candidate/admin logged in
+require_once 'includes/auth.php';   // Your auth checks for admin/candidate
 require_once 'includes/db.php';
 
 if (!isset($_GET['video']) || empty($_GET['video'])) {
     http_response_code(400);
-    exit('Invalid video parameter');
+    exit('Invalid video parameter.');
 }
 
 $videoFile = basename($_GET['video']); // sanitize input
 $videoPath = __DIR__ . '/assets/uploads/' . $videoFile;
 
-// Check if file exists
 if (!file_exists($videoPath)) {
     http_response_code(404);
-    exit('Video not found');
+    exit('Video not found.');
 }
 
-// Check user permissions:
-// For example, if candidate, check this video belongs to them
-// If admin, allow all
+// User info from session
+$userId = $_SESSION['user_id'] ?? null;
+$userRole = $_SESSION['role'] ?? null;
 
-$userId = $_SESSION['user_id'];  // example, adjust based on your session
-$userRole = $_SESSION['role'];   // 'admin' or 'candidate'
+if (!$userId || !$userRole) {
+    http_response_code(401);
+    exit('Unauthorized.');
+}
 
+// Authorization check
 if ($userRole === 'candidate') {
-    // Query DB to confirm candidate owns this video/interview
+    // Check candidate owns the interview video
     $stmt = $pdo->prepare("
         SELECT i.id FROM interviews i
         JOIN candidates c ON i.candidate_id = c.id
@@ -36,20 +38,25 @@ if ($userRole === 'candidate') {
     $stmt->execute([$videoFile, $userId]);
     if (!$stmt->fetch()) {
         http_response_code(403);
-        exit('Access denied');
+        exit('Access denied.');
     }
-} elseif ($userRole !== 'admin') {
+} elseif ($userRole === 'admin') {
+    // admins can access all videos
+} else {
     http_response_code(403);
-    exit('Access denied');
+    exit('Access denied.');
 }
 
-// Serve video with proper headers and support for range requests (streaming)
+// Serve video with support for HTTP Range (streaming)
+
 $size = filesize($videoPath);
 $length = $size;
 $start = 0;
 $end = $size - 1;
-header('Content-Type: video/webm'); // Adjust MIME based on your videos
-header("Accept-Ranges: 0-$length");
+$mime = mime_content_type($videoPath) ?: 'application/octet-stream';
+
+header("Content-Type: $mime");
+header("Accept-Ranges: bytes");
 
 if (isset($_SERVER['HTTP_RANGE'])) {
     $range = $_SERVER['HTTP_RANGE'];
@@ -59,7 +66,7 @@ if (isset($_SERVER['HTTP_RANGE'])) {
         exit;
     }
     if ($range == '-') {
-        $start = $size - substr($range, 1);
+        $start = $size - intval(substr($range, 1));
     } else {
         $range = explode('-', $range);
         $start = intval($range[0]);
@@ -80,10 +87,11 @@ header("Content-Length: $length");
 
 $fp = fopen($videoPath, 'rb');
 fseek($fp, $start);
+
 $bufferSize = 1024 * 8;
-while (!feof($fp) && ($p = ftell($fp)) <= $end) {
-    if ($p + $bufferSize > $end) {
-        $bufferSize = $end - $p + 1;
+while (!feof($fp) && ($pos = ftell($fp)) <= $end) {
+    if ($pos + $bufferSize > $end) {
+        $bufferSize = $end - $pos + 1;
     }
     set_time_limit(0);
     echo fread($fp, $bufferSize);
