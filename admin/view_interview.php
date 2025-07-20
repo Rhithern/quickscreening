@@ -1,18 +1,45 @@
 <?php
-require_once '../includes/auth.php';  // Admin must be logged in
+require_once '../includes/auth.php';  // Admin authentication
 require_once '../includes/db.php';
-$pageTitle = 'View Interview Details';
 
-include '../includes/header.php';
+$pageTitle = 'View Interview Details';
 
 $token = $_GET['token'] ?? '';
 if (!$token) {
-    echo '<div class="alert alert-danger">No interview specified.</div>';
-    include '../includes/footer.php';
+    header('Location: dashboard.php?error=No interview specified');
     exit;
 }
 
-// Fetch interview info
+// Handle POST actions (delete)
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!isset($_POST['token']) || $_POST['token'] !== $token) {
+        die('Invalid token.');
+    }
+
+    if ($_POST['action'] === 'delete') {
+        // Fetch video filename
+        $stmt = $pdo->prepare("SELECT video_filename FROM interviews WHERE token = ?");
+        $stmt->execute([$token]);
+        $video = $stmt->fetchColumn();
+
+        // Delete video file if exists
+        if ($video) {
+            $filePath = $_SERVER['DOCUMENT_ROOT'] . '/assets/uploads/' . $video;
+            if (file_exists($filePath)) {
+                unlink($filePath);
+            }
+        }
+
+        // Delete interview record
+        $stmt = $pdo->prepare("DELETE FROM interviews WHERE token = ?");
+        $stmt->execute([$token]);
+
+        header('Location: dashboard.php?msg=Interview deleted successfully');
+        exit;
+    }
+}
+
+// Fetch interview data with position title
 $stmt = $pdo->prepare("SELECT i.*, p.title AS position_title
                        FROM interviews i
                        JOIN positions p ON i.position_id = p.id
@@ -21,16 +48,15 @@ $stmt->execute([$token]);
 $interview = $stmt->fetch();
 
 if (!$interview) {
-    echo '<div class="alert alert-danger">Interview not found.</div>';
-    include '../includes/footer.php';
+    header('Location: dashboard.php?error=Interview not found');
     exit;
 }
 
-// Check if video file exists
-$videoPath = '/assets/uploads/' . $interview['video_filename'];  // Make sure this matches your storage
+$videoPath = '/assets/uploads/' . $interview['video_filename'];
 $videoFullPath = $_SERVER['DOCUMENT_ROOT'] . $videoPath;
 $videoExists = $interview['video_filename'] && file_exists($videoFullPath);
 
+include '../includes/header.php';
 ?>
 
 <h2>Interview Details</h2>
@@ -70,6 +96,16 @@ $videoExists = $interview['video_filename'] && file_exists($videoFullPath);
   <div class="alert alert-warning text-center">No video uploaded yet.</div>
 <?php endif; ?>
 
-<a href="/admin/dashboard.php" class="btn btn-secondary mt-4">Back to Dashboard</a>
+<div class="mt-4 text-center">
+  <form method="post" onsubmit="return confirm('Are you sure you want to delete this interview?');" class="d-inline">
+    <input type="hidden" name="action" value="delete">
+    <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>">
+    <button type="submit" class="btn btn-danger">Delete Interview</button>
+  </form>
+
+  <a href="edit_interview.php?token=<?= urlencode($token) ?>" class="btn btn-primary ms-2">Edit Interview</a>
+</div>
+
+<a href="/admin/dashboard.php" class="btn btn-secondary mt-4 d-block mx-auto w-25">Back to Dashboard</a>
 
 <?php include '../includes/footer.php'; ?>
