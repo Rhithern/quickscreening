@@ -1,78 +1,80 @@
-<?php
-// upload_video.php
-session_start();
-if (!isset($_SESSION['candidate_id'])) {
-    header("Location: login.php");
-    exit();
-}
-?>
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Upload Answer Video</title>
+    <meta charset="UTF-8">
+    <title>Upload Answer</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <style>
-        .preview { margin-top: 15px; }
-        video { width: 320px; height: 240px; border: 1px solid #ccc; }
+        #progressWrapper {
+            width: 100%;
+            background-color: #eee;
+            margin-top: 15px;
+        }
+        #progressBar {
+            width: 0%;
+            height: 25px;
+            background-color: green;
+            text-align: center;
+            color: white;
+        }
+        #preview {
+            margin-top: 15px;
+        }
     </style>
 </head>
 <body>
     <h2>Upload Your Answer</h2>
-
-    <form id="uploadForm" action="process_upload.php" method="POST" enctype="multipart/form-data">
-        <input type="file" name="answer_video" id="answer_video" accept="video/*,audio/*" required><br><br>
-
-        <input type="hidden" name="question_id" value="<?= $_GET['question_id'] ?? 0 ?>">
-        <input type="hidden" name="interview_id" value="<?= $_GET['interview_id'] ?? 0 ?>">
-
-        <div class="preview">
-            <video id="preview" controls></video>
-            <audio id="audioPreview" controls style="display:none;"></audio>
-        </div>
-
-        <br>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" name="answer" id="answer" accept="video/mp4,video/webm,audio/ogg,audio/mpeg" required><br><br>
+        <input type="hidden" name="question_id" value="<?= htmlspecialchars($_GET['question_id'] ?? '') ?>">
+        <input type="hidden" name="interview_id" value="<?= htmlspecialchars($_GET['interview_id'] ?? '') ?>">
         <button type="submit">Upload</button>
-        <button type="button" id="reRecordBtn" style="display:none;">Choose Different File</button>
     </form>
 
+    <div id="progressWrapper">
+        <div id="progressBar">0%</div>
+    </div>
+
+    <div id="preview"></div>
+
     <script>
-        const fileInput = document.getElementById('answer_video');
-        const videoPreview = document.getElementById('preview');
-        const audioPreview = document.getElementById('audioPreview');
-        const reRecordBtn = document.getElementById('reRecordBtn');
+        $('#uploadForm').submit(function (e) {
+            e.preventDefault();
 
-        fileInput.addEventListener('change', function () {
-            const file = this.files[0];
-
-            if (!file) return;
-
-            const fileType = file.type;
-            if (!fileType.startsWith("video/") && !fileType.startsWith("audio/")) {
-                alert("Only video/audio files are allowed.");
-                this.value = '';
-                return;
-            }
-
-            const url = URL.createObjectURL(file);
-            if (fileType.startsWith("video/")) {
-                videoPreview.src = url;
-                videoPreview.style.display = 'block';
-                audioPreview.style.display = 'none';
-            } else {
-                audioPreview.src = url;
-                audioPreview.style.display = 'block';
-                videoPreview.style.display = 'none';
-            }
-
-            reRecordBtn.style.display = 'inline-block';
-        });
-
-        reRecordBtn.addEventListener('click', () => {
-            fileInput.value = '';
-            videoPreview.src = '';
-            audioPreview.src = '';
-            videoPreview.style.display = 'none';
-            audioPreview.style.display = 'none';
-            reRecordBtn.style.display = 'none';
+            let formData = new FormData(this);
+            $.ajax({
+                xhr: function () {
+                    let xhr = new window.XMLHttpRequest();
+                    xhr.upload.addEventListener("progress", function (evt) {
+                        if (evt.lengthComputable) {
+                            let percentComplete = Math.round((evt.loaded / evt.total) * 100);
+                            $('#progressBar').css('width', percentComplete + '%');
+                            $('#progressBar').text(percentComplete + '%');
+                        }
+                    }, false);
+                    return xhr;
+                },
+                url: 'upload_answer_video.php',
+                type: 'POST',
+                data: formData,
+                contentType: false,
+                processData: false,
+                success: function (response) {
+                    alert('Upload successful!');
+                    if (response.endsWith(".mp4") || response.endsWith(".webm")) {
+                        $('#preview').html(`<video src="${response}" controls width="400"></video>`);
+                    } else if (response.endsWith(".ogg") || response.endsWith(".mp3")) {
+                        $('#preview').html(`<audio src="${response}" controls></audio>`);
+                    } else {
+                        $('#preview').html("Preview not available");
+                    }
+                    $('#progressBar').css('width', '0%').text('0%');
+                },
+                error: function () {
+                    alert('Upload failed.');
+                    $('#progressBar').css('width', '0%').text('0%');
+                }
+            });
         });
     </script>
 </body>
