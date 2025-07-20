@@ -1,4 +1,5 @@
 <?php
+include '../includes/auth_candidate.php';
 require_once '../includes/auth.php';  // candidate authentication
 require_once '../includes/db.php';
 
