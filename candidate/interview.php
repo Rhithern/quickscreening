@@ -1,174 +1,268 @@
 <?php
-include '../includes/auth_candidate.php';
-require_once '../includes/auth.php';  // candidate authentication
+session_start();
+require_once '../includes/auth_candidate.php';
 require_once '../includes/db.php';
 
 $candidateId = $_SESSION['candidate_id'] ?? null;
-$interviewId = $_GET['interview_id'] ?? null;
-
-if (!$candidateId || !$interviewId) {
-    header('Location: dashboard.php');
+if (!$candidateId) {
+    header('Location: /login.php');
     exit;
 }
 
-// Fetch questions for this interview's position
-$sql = "SELECT q.* FROM questions q
-        JOIN interviews i ON i.position_id = q.position_id
-        WHERE i.id = ? ORDER BY q.id ASC";
-$stmt = $pdo->prepare($sql);
+// Get interview ID from GET param and validate
+$interviewId = $_GET['id'] ?? null;
+if (!$interviewId || !is_numeric($interviewId)) {
+    die("Invalid interview ID.");
+}
+
+// Fetch interview and check ownership
+$stmt = $pdo->prepare("SELECT * FROM interviews WHERE id = ? AND candidate_id = ?");
+$stmt->execute([$interviewId, $candidateId]);
+$interview = $stmt->fetch(PDO::FETCH_ASSOC);
+if (!$interview) {
+    die("Interview not found or unauthorized.");
+}
+
+// Fetch interview questions
+$stmt = $pdo->prepare("
+    SELECT iq.id AS interview_question_id, q.id AS question_id, q.question_text
+    FROM interview_questions iq
+    JOIN questions q ON iq.question_id = q.id
+    WHERE iq.interview_id = ?
+    ORDER BY iq.id ASC
+");
 $stmt->execute([$interviewId]);
 $questions = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Fetch existing answers by this candidate for this interview (if any)
-$answers = [];
-$answerSql = "SELECT * FROM answers WHERE interview_id = ?";
-$answerStmt = $pdo->prepare($answerSql);
-$answerStmt->execute([$interviewId]);
-foreach ($answerStmt->fetchAll(PDO::FETCH_ASSOC) as $ans) {
-    $answers[$ans['question_id']] = $ans;
+if (!$questions) {
+    die("No questions found for this interview.");
 }
 
-// Handle form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    foreach ($questions as $q) {
-        $answerText = trim($_POST['answer_text'][$q['id']] ?? '');
-        $answerVideo = $_POST['answer_video'][$q['id']] ?? null;
-
-        // Check if answer exists
-        $checkStmt = $pdo->prepare("SELECT id FROM answers WHERE interview_id = ? AND question_id = ?");
-        $checkStmt->execute([$interviewId, $q['id']]);
-
-        if ($checkStmt->rowCount()) {
-            $answerId = $checkStmt->fetchColumn();
-            $updateSql = "UPDATE answers SET answer_text = ?, answer_video = ? WHERE id = ?";
-            $updateStmt = $pdo->prepare($updateSql);
-            $updateStmt->execute([$answerText, $answerVideo, $answerId]);
-        } else {
-            $insertSql = "INSERT INTO answers (interview_id, question_id, answer_text, answer_video) VALUES (?, ?, ?, ?)";
-            $insertStmt = $pdo->prepare($insertSql);
-            $insertStmt->execute([$interviewId, $q['id'], $answerText, $answerVideo]);
-        }
-    }
-
-    // Mark interview as completed
-    $completeStmt = $pdo->prepare("UPDATE interviews SET completed = 1, completed_at = NOW() WHERE id = ?");
-    $completeStmt->execute([$interviewId]);
-
-    // TODO: Optionally send notification email here
-
-    header('Location: dashboard.php?msg=Interview+submitted+successfully');
-    exit;
+// Fetch existing answers for this interview & candidate
+$stmt = $pdo->prepare("SELECT question_id, video_path FROM answers WHERE interview_id = ? AND candidate_id = ?");
+$stmt->execute([$interviewId, $candidateId]);
+$existingAnswersRaw = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$existingAnswers = [];
+foreach ($existingAnswersRaw as $ans) {
+    $existingAnswers[$ans['question_id']] = $ans['video_path'];
 }
 
-$pageTitle = 'Interview - Record Your Answers';
+// Optional: Interview time limit (in minutes)
+$timeLimitMinutes = intval($interview['time_limit_minutes'] ?? 0);
+$interviewStartTime = strtotime($interview['started_at'] ?? null);
+$timeLeftSeconds = 0;
+if ($timeLimitMinutes > 0 && $interviewStartTime) {
+    $endTime = $interviewStartTime + ($timeLimitMinutes * 60);
+    $now = time();
+    $timeLeftSeconds = max(0, $endTime - $now);
+}
+
+// Page title
+$pageTitle = "Interview: " . htmlspecialchars($interview['position_title'] ?? '');
+
+// Include header
 include '../includes/header.php';
 ?>
 
-<h2>Interview Questions</h2>
-<form method="POST" id="interviewForm">
-    <?php foreach ($questions as $index => $q): ?>
-        <div class="mb-4">
-            <label class="form-label"><strong>Question <?= $index + 1 ?>:</strong> <?= htmlspecialchars($q['question_text']) ?></label>
+<h2>Interview for: <?= htmlspecialchars($interview['position_title'] ?? 'Position') ?></h2>
 
-            <textarea name="answer_text[<?= $q['id'] ?>]" class="form-control mb-2" rows="4" placeholder="Type your answer here"><?= htmlspecialchars($answers[$q['id']]['answer_text'] ?? '') ?></textarea>
+<?php if ($timeLimitMinutes > 0): ?>
+  <div id="timer" class="alert alert-info mb-4">
+    Time Remaining: <span id="time-left"><?= gmdate("i:s", $timeLeftSeconds) ?></span>
+  </div>
+<?php endif; ?>
 
-            <!-- Hidden input to hold uploaded video filename -->
-            <input type="hidden" name="answer_video[<?= $q['id'] ?>]" id="video_file_<?= $q['id'] ?>" value="<?= htmlspecialchars($answers[$q['id']]['answer_video'] ?? '') ?>">
+<div id="interview-container">
 
-            <!-- Show previously uploaded video if any -->
-            <?php if (!empty($answers[$q['id']]['answer_video'])): ?>
-                <video width="320" height="240" controls class="mb-2" src="/uploads/answers/<?= htmlspecialchars($answers[$q['id']]['answer_video']) ?>"></video><br>
-            <?php endif; ?>
-
-            <!-- Video recording UI -->
-            <video id="preview_<?= $q['id'] ?>" width="320" height="240" controls style="display:none;"></video><br>
-
-            <button type="button" class="btn btn-sm btn-outline-primary" onclick="startRecording(<?= $q['id'] ?>)">Record Answer</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" onclick="stopRecording(<?= $q['id'] ?>)" disabled id="stop_btn_<?= $q['id'] ?>">Stop</button>
-            <div id="status_<?= $q['id'] ?>" class="mt-1"></div>
-        </div>
+  <div id="question-nav" class="mb-3">
+    <?php foreach ($questions as $idx => $q): 
+        $answeredClass = isset($existingAnswers[$q['question_id']]) ? 'btn-success' : 'btn-outline-secondary';
+    ?>
+      <button class="btn <?= $answeredClass ?> question-nav-btn" data-index="<?= $idx ?>">
+        Q<?= $idx + 1 ?>
+      </button>
     <?php endforeach; ?>
+  </div>
 
-    <button type="submit" class="btn btn-success">Submit Interview</button>
-</form>
+  <?php foreach ($questions as $idx => $q): 
+    $videoPath = $existingAnswers[$q['question_id']] ?? null;
+  ?>
+    <div class="question-block" style="display: <?= $idx === 0 ? 'block' : 'none' ?>;" data-index="<?= $idx ?>">
+      <h5>Question <?= $idx + 1 ?> of <?= count($questions) ?></h5>
+      <p><?= nl2br(htmlspecialchars($q['question_text'])) ?></p>
+
+      <div>
+        <?php if ($videoPath): ?>
+          <p><strong>Your Answer:</strong></p>
+          <video width="320" height="240" controls>
+            <source src="/uploads/answers/<?= htmlspecialchars($videoPath) ?>" type="video/mp4">
+            Your browser does not support the video tag.
+          </video>
+        <?php else: ?>
+          <p><em>No answer recorded yet.</em></p>
+        <?php endif; ?>
+      </div>
+
+      <form class="upload-answer-form" data-question-id="<?= $q['question_id'] ?>" data-interview-id="<?= $interviewId ?>">
+        <div class="mb-3">
+          <label for="answer-file-<?= $idx ?>" class="form-label">Upload or Record Your Answer (mp4, webm, ogg, mp3):</label>
+          <input type="file" class="form-control answer-file" id="answer-file-<?= $idx ?>" accept="video/mp4,video/webm,audio/ogg,audio/mp3" required>
+        </div>
+        <div class="progress mb-3" style="height: 20px; display:none;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+        </div>
+        <button type="submit" class="btn btn-primary">Upload / Overwrite Answer</button>
+      </form>
+
+      <div class="upload-status mt-2"></div>
+
+      <div class="mt-3">
+        <button class="btn btn-secondary prev-question" <?= $idx === 0 ? 'disabled' : '' ?>>Previous</button>
+        <button class="btn btn-secondary next-question" <?= $idx === count($questions) - 1 ? 'disabled' : '' ?>>Next</button>
+      </div>
+    </div>
+  <?php endforeach; ?>
+</div>
 
 <script>
-const mediaRecorders = {};
-const recordedChunks = {};
+document.addEventListener('DOMContentLoaded', () => {
+  const questionBlocks = document.querySelectorAll('.question-block');
+  const navButtons = document.querySelectorAll('.question-nav-btn');
 
-async function startRecording(questionId) {
-    const statusEl = document.getElementById(`status_${questionId}`);
-    statusEl.textContent = 'Requesting camera/mic access...';
+  let currentIndex = 0;
 
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        const videoEl = document.getElementById(`preview_${questionId}`);
-        videoEl.style.display = 'block';
-        videoEl.srcObject = stream;
-        videoEl.muted = true;
-        videoEl.play();
+  function showQuestion(index) {
+    currentIndex = index;
+    questionBlocks.forEach((block, i) => {
+      block.style.display = i === index ? 'block' : 'none';
+    });
+    navButtons.forEach((btn, i) => {
+      btn.classList.toggle('btn-primary', i === index);
+      btn.classList.toggle('btn-outline-secondary', i !== index);
+    });
+  }
 
-        recordedChunks[questionId] = [];
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorders[questionId] = mediaRecorder;
+  navButtons.forEach((btn, i) => {
+    btn.addEventListener('click', () => {
+      showQuestion(i);
+    });
+  });
 
-        mediaRecorder.ondataavailable = e => {
-            if (e.data.size > 0) recordedChunks[questionId].push(e.data);
-        };
+  document.querySelectorAll('.next-question').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (currentIndex < questionBlocks.length - 1) {
+        showQuestion(currentIndex + 1);
+      }
+    });
+  });
 
-        mediaRecorder.onstop = async () => {
-            statusEl.textContent = 'Uploading video...';
+  document.querySelectorAll('.prev-question').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (currentIndex > 0) {
+        showQuestion(currentIndex - 1);
+      }
+    });
+  });
 
-            const blob = new Blob(recordedChunks[questionId], { type: 'video/webm' });
-            const formData = new FormData();
-            formData.append('video', blob);
-            formData.append('question_id', questionId);
-            formData.append('interview_id', <?= json_encode($interviewId) ?>);
+  // Handle upload form submissions with AJAX
+  document.querySelectorAll('.upload-answer-form').forEach(form => {
+    form.addEventListener('submit', e => {
+      e.preventDefault();
 
-            try {
-                const response = await fetch('/candidate/upload_answer_video.php', {
-                    method: 'POST',
-                    body: formData
-                });
-                const result = await response.json();
+      const fileInput = form.querySelector('.answer-file');
+      const file = fileInput.files[0];
+      if (!file) {
+        alert('Please select a file to upload.');
+        return;
+      }
 
-                if (result.success) {
-                    statusEl.textContent = 'Video uploaded successfully.';
-                    document.getElementById(`video_file_${questionId}`).value = result.filename;
-                } else {
-                    statusEl.textContent = 'Upload failed: ' + result.error;
-                }
-            } catch (error) {
-                statusEl.textContent = 'Upload error: ' + error.message;
-            }
-        };
+      const allowedTypes = ['video/mp4', 'video/webm', 'audio/ogg', 'audio/mp3'];
+      if (!allowedTypes.includes(file.type)) {
+        alert('Unsupported file type. Allowed: mp4, webm, ogg, mp3');
+        return;
+      }
 
-        mediaRecorder.start();
+      const progressBarContainer = form.querySelector('.progress');
+      const progressBar = progressBarContainer.querySelector('.progress-bar');
+      progressBarContainer.style.display = 'block';
+      progressBar.style.width = '0%';
 
-        statusEl.textContent = 'Recording...';
-        document.getElementById(`stop_btn_${questionId}`).disabled = false;
-    } catch (err) {
-        statusEl.textContent = 'Error accessing camera/mic: ' + err.message;
-    }
-}
+      const formData = new FormData();
+      formData.append('answer_video', file);
+      formData.append('question_id', form.dataset.questionId);
+      formData.append('interview_id', form.dataset.interviewId);
 
-function stopRecording(questionId) {
-    const mediaRecorder = mediaRecorders[questionId];
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+      fetch('/candidate/upload_answer_video.php', {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin',
+      })
+      .then(response => response.json())
+      .then(data => {
+        progressBar.style.width = '100%';
 
-        // Stop all tracks to release camera/mic
-        const videoEl = document.getElementById(`preview_${questionId}`);
-        const stream = videoEl.srcObject;
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-            videoEl.srcObject = null;
-            videoEl.style.display = 'none';
+        if (data.success) {
+          // Show success and update video preview
+          const statusDiv = form.querySelector('.upload-status');
+          statusDiv.innerHTML = `<div class="alert alert-success">${data.message}</div>`;
+
+          // Update video preview
+          const questionBlock = form.closest('.question-block');
+          let videoEl = questionBlock.querySelector('video');
+          if (!videoEl) {
+            videoEl = document.createElement('video');
+            videoEl.controls = true;
+            videoEl.width = 320;
+            videoEl.height = 240;
+            questionBlock.insertBefore(videoEl, statusDiv);
+          }
+          videoEl.src = '/uploads/answers/' + data.filename + '?t=' + new Date().getTime();
+
+          // Update nav button style to show answered
+          const idx = parseInt(questionBlock.dataset.index);
+          navButtons[idx].classList.remove('btn-outline-secondary');
+          navButtons[idx].classList.add('btn-success');
+        } else {
+          alert(data.error || 'Upload failed');
         }
-        document.getElementById(`stop_btn_${questionId}`).disabled = true;
-        document.getElementById(`status_${questionId}`).textContent = 'Processing upload...';
+      })
+      .catch(() => alert('Upload failed. Please try again.'))
+      .finally(() => {
+        progressBarContainer.style.display = 'none';
+      });
+    });
+  });
+
+  // Countdown timer (if applicable)
+  <?php if ($timeLimitMinutes > 0 && $timeLeftSeconds > 0): ?>
+  let timeLeft = <?= $timeLeftSeconds ?>;
+  const timerEl = document.getElementById('time-left');
+  const timerInterval = setInterval(() => {
+    if (timeLeft <= 0) {
+      clearInterval(timerInterval);
+      alert('Interview time is up!');
+      // Optionally redirect or disable forms here
+    } else {
+      timeLeft--;
+      const minutes = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+      const seconds = (timeLeft % 60).toString().padStart(2, '0');
+      timerEl.textContent = minutes + ':' + seconds;
     }
-}
+  }, 1000);
+  <?php endif; ?>
+});
 </script>
+
+<style>
+.question-block {
+  border: 1px solid #ccc;
+  padding: 15px;
+  margin-bottom: 1rem;
+  border-radius: 5px;
+}
+#question-nav button {
+  margin-right: 5px;
+  margin-bottom: 10px;
+}
+</style>
 
 <?php include '../includes/footer.php'; ?>
