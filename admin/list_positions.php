@@ -1,8 +1,8 @@
 <?php
 require_once '../includes/auth_admin.php';
 require_once '../includes/db_connect.php';
+
 $pageTitle = 'List Positions';
-include '../includes/header.php';
 
 // Fetch filter inputs
 $search = $_GET['search'] ?? '';
@@ -15,7 +15,7 @@ $validSort = ['title', 'created_at', 'applicant_count'];
 $sort = in_array($sort, $validSort) ? $sort : 'created_at';
 $order = strtolower($order) === 'asc' ? 'ASC' : 'DESC';
 
-// Build SQL with filters
+// Build SQL with filters and join applications count
 $sql = "SELECT p.*, COUNT(a.id) AS applicant_count
         FROM positions p
         LEFT JOIN applications a ON p.id = a.position_id
@@ -44,6 +44,8 @@ $sql .= " GROUP BY p.id ORDER BY $sort $order";
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $positions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+include '../includes/header.php';
 ?>
 
 <h2>Job Positions</h2>
@@ -76,18 +78,21 @@ $positions = $stmt->fetchAll(PDO::FETCH_ASSOC);
   </div>
 </form>
 
-<table class="table table-bordered table-striped">
-  <thead>
-    <tr>
-      <th>Title</th>
-      <th>Description</th>
-      <th>Created</th>
-      <th>Applicants</th>
-      <th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
-    <?php foreach ($positions as $pos): ?>
+<?php if (count($positions) === 0): ?>
+  <p>No positions found.</p>
+<?php else: ?>
+  <table class="table table-bordered table-striped">
+    <thead class="table-dark">
+      <tr>
+        <th>Title</th>
+        <th>Description</th>
+        <th>Created</th>
+        <th>Applicants</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php foreach ($positions as $pos): ?>
       <tr>
         <td><?= htmlspecialchars($pos['title']) ?></td>
         <td><?= htmlspecialchars(substr($pos['description'], 0, 60)) ?>...</td>
@@ -98,8 +103,9 @@ $positions = $stmt->fetchAll(PDO::FETCH_ASSOC);
           <a href="delete_position.php?id=<?= $pos['id'] ?>" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure?')">Delete</a>
         </td>
       </tr>
-    <?php endforeach; ?>
-  </tbody>
-</table>
+      <?php endforeach; ?>
+    </tbody>
+  </table>
+<?php endif; ?>
 
 <?php include '../includes/footer.php'; ?>
