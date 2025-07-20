@@ -1,0 +1,4 @@
+# Disable direct access to video files
+<FilesMatch "\.(mp4|webm|ogg)$">
+  Require all denied
+</FilesMatch>
