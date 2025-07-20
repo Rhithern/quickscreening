@@ -2,7 +2,7 @@
 // Database
 define('DB_HOST', 'localhost');
 define('DB_USER', 'interviewuser');
-define('DB_PASS', 'StrongPassword');
+define('DB_PASS', 'Londoner10#');
 define('DB_NAME', 'interview_platform');
 
 // Branding defaults
