@@ -20,14 +20,30 @@
 
 <!-- Bootstrap JS Bundle (Popper included) -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <script src="/assets/js/custom.js"></script>
 
 <script>
-  // Dark mode toggle
+  // Dark mode toggle with localStorage
   const toggleBtn = document.getElementById('toggleTheme');
+
+  // Load saved preference
+  if (localStorage.getItem('darkMode') === 'enabled') {
+    document.body.classList.add('bg-dark', 'text-light');
+  }
+
   toggleBtn.addEventListener('click', () => {
     document.body.classList.toggle('bg-dark');
     document.body.classList.toggle('text-light');
+
+    if (document.body.classList.contains('bg-dark')) {
+      localStorage.setItem('darkMode', 'enabled');
+    } else {
+      localStorage.removeItem('darkMode');
+    }
   });
 </script>
 
