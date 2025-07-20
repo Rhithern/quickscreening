@@ -51,9 +51,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $question_id = $row['interview_question_id'];
     $interview_id = $row['interview_id'];
 
-    // Save the answer
-    $stmt = $pdo->prepare("INSERT INTO answers (candidate_id, interview_id, question_id, video_path, submitted_at) VALUES (?, ?, ?, ?, NOW())");
-    $stmt->execute([$candidate_id, $interview_id, $question_id, $filename]);
+    // Check if answer already exists
+    $stmt = $pdo->prepare("SELECT id, video_path FROM answers WHERE candidate_id = ? AND question_id = ?");
+    $stmt->execute([$candidate_id, $question_id]);
+    $existing = $stmt->fetch();
+
+    if ($existing) {
+        // Delete old video file
+        $old_path = $upload_dir . $existing['video_path'];
+        if (file_exists($old_path)) {
+            unlink($old_path);
+        }
+
+        // Update existing answer
+        $stmt = $pdo->prepare("UPDATE answers SET video_path = ?, submitted_at = NOW() WHERE id = ?");
+        $stmt->execute([$filename, $existing['id']]);
+    } else {
+        // Insert new answer
+        $stmt = $pdo->prepare("INSERT INTO answers (candidate_id, interview_id, question_id, video_path, submitted_at) VALUES (?, ?, ?, ?, NOW())");
+        $stmt->execute([$candidate_id, $interview_id, $question_id, $filename]);
+    }
 
     echo "Upload successful. Answer recorded.";
     echo "<br><a href='dashboard.php'>Back to Dashboard</a>";
