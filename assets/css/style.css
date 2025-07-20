@@ -1,0 +1,24 @@
+/* Light mode (default) */
+body {
+  background-color: #fff;
+  color: #212529;
+}
+
+/* Dark mode */
+body.bg-dark {
+  background-color: #121212 !important;
+  color: #e0e0e0 !important;
+}
+
+body.bg-dark a {
+  color: #90caf9 !important;
+}
+
+body.bg-dark .navbar-dark {
+  background-color: #1f1f1f !important;
+}
+
+body.bg-dark .card {
+  background-color: #1e1e1e !important;
+  border-color: #333 !important;
+}
