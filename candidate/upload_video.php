@@ -1,77 +1,63 @@
 <?php
-require_once '../includes/auth_candidate.php';
-require_once '../includes/db_connect.php';
+session_start();
+require_once '../includes/db.php';
 
-header('Content-Type: application/json');
-
-// Validate required POST data
-if (!isset($_POST['question_id']) || !isset($_POST['interview_id'])) {
-    http_response_code(400);
-    echo json_encode(['status' => 'error', 'message' => 'Missing question_id or interview_id.']);
+if (!isset($_SESSION['candidate_id'])) {
+    header('Location: login.php');
     exit;
 }
 
-$questionId = intval($_POST['question_id']);
-$interviewId = intval($_POST['interview_id']);
-$candidateId = $_SESSION['candidate_id'] ?? 0;
+$candidate_id = $_SESSION['candidate_id'];
 
-if (!$candidateId) {
-    http_response_code(403);
-    echo json_encode(['status' => 'error', 'message' => 'Unauthorized.']);
-    exit;
-}
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!isset($_FILES['video']) || $_FILES['video']['error'] !== UPLOAD_ERR_OK) {
+        die('Upload failed. Please try again.');
+    }
 
-// Ensure upload dir exists
-$uploadDir = __DIR__ . '/../uploads/answers/';
-if (!is_dir($uploadDir)) {
-    mkdir($uploadDir, 0755, true);
-}
+    $allowed_types = ['video/mp4', 'video/webm', 'audio/ogg', 'audio/mp3'];
+    $mime_type = mime_content_type($_FILES['video']['tmp_name']);
 
-// Validate uploaded file
-if (!isset($_FILES['media']) || $_FILES['media']['error'] !== UPLOAD_ERR_OK) {
-    http_response_code(400);
-    echo json_encode(['status' => 'error', 'message' => 'No media uploaded.']);
-    exit;
-}
+    if (!in_array($mime_type, $allowed_types)) {
+        die('Unsupported file type. Allowed: .mp4, .webm, .ogg, .mp3');
+    }
 
-// Allow only specific file types
-$allowedExtensions = ['webm', 'ogg', 'mp3', 'mp4', 'wav'];
-$originalName = $_FILES['media']['name'];
-$extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+    $ext = pathinfo($_FILES['video']['name'], PATHINFO_EXTENSION);
+    $upload_dir = '../uploads/answers/';
+    if (!file_exists($upload_dir)) {
+        mkdir($upload_dir, 0777, true);
+    }
 
-if (!in_array($extension, $allowedExtensions)) {
-    http_response_code(415);
-    echo json_encode(['status' => 'error', 'message' => 'Invalid file type.']);
-    exit;
-}
+    $filename = uniqid('answer_') . '.' . $ext;
+    $filepath = $upload_dir . $filename;
+    move_uploaded_file($_FILES['video']['tmp_name'], $filepath);
 
-// Save file
-$filename = "answer_{$candidateId}_{$questionId}_" . time() . '.' . $extension;
-$targetPath = $uploadDir . $filename;
-
-if (!move_uploaded_file($_FILES['media']['tmp_name'], $targetPath)) {
-    http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Failed to save file.']);
-    exit;
-}
-
-// Save to database
-try {
+    // Auto-detect current interview and question (latest unanswered)
     $stmt = $pdo->prepare("
-        INSERT INTO candidate_answers (candidate_id, interview_id, question_id, answer_type, file_path, submitted_at)
-        VALUES (?, ?, ?, ?, ?, NOW())
+        SELECT iq.id AS interview_question_id, iq.interview_id
+        FROM interview_questions iq
+        JOIN interviews i ON iq.interview_id = i.id
+        WHERE i.candidate_id = ? AND iq.id NOT IN (
+            SELECT question_id FROM answers WHERE candidate_id = ?
+        )
+        ORDER BY iq.id ASC LIMIT 1
     ");
-    $stmt->execute([
-        $candidateId,
-        $interviewId,
-        $questionId,
-        $extension, // file type
-        'uploads/answers/' . $filename
-    ]);
+    $stmt->execute([$candidate_id, $candidate_id]);
+    $row = $stmt->fetch();
 
-    echo json_encode(['status' => 'success', 'message' => 'Media uploaded successfully.']);
+    if (!$row) {
+        die('No pending questions found.');
+    }
 
-} catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Database error.']);
+    $question_id = $row['interview_question_id'];
+    $interview_id = $row['interview_id'];
+
+    // Save the answer
+    $stmt = $pdo->prepare("INSERT INTO answers (candidate_id, interview_id, question_id, video_path, submitted_at) VALUES (?, ?, ?, ?, NOW())");
+    $stmt->execute([$candidate_id, $interview_id, $question_id, $filename]);
+
+    echo "Upload successful. Answer recorded.";
+    echo "<br><a href='dashboard.php'>Back to Dashboard</a>";
+} else {
+    echo "Invalid request.";
 }
+?>
