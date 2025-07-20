@@ -1,4 +1,5 @@
 <?php
+include '../includes/auth_candidate.php';
 session_start();
 
 // Destroy all session data
