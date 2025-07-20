@@ -14,6 +14,7 @@ require_once __DIR__ . '/../config.php';
 
   <!-- Custom CSS -->
   <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/custom_brand.css"> <!-- Brand styling -->
 
 </head>
 <body>
