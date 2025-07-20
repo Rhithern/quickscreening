@@ -1,4 +1,5 @@
 <?php
+include '../includes/auth_candidate.php';
 session_start();
 if (!isset($_SESSION['candidate_id'])) {
     header("Location: login.php");
