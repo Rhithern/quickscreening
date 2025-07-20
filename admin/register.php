@@ -1,29 +1,50 @@
 <?php
-require_once '../includes/db.php'; // DB connection
+session_start();
+require_once '../includes/db.php'; // PDO connection
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email']);
+    $org_name = trim($_POST['org_name']);
     $password = $_POST['password'];
+    $confirm_password = $_POST['confirm_password'];
+    $errors = [];
 
-    // Basic validation
+    // Validate email
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = "Invalid email";
-    } elseif (strlen($password) < 6) {
-        $error = "Password must be at least 6 characters";
-    } else {
-        // Check if email already exists
-        $stmt = $pdo->prepare("SELECT id FROM candidates WHERE email = ?");
-        $stmt->execute([$email]);
-        if ($stmt->fetch()) {
-            $error = "Email already registered";
-        } else {
-            // Insert new candidate
-            $hash = password_hash($password, PASSWORD_DEFAULT);
-            $stmt = $pdo->prepare("INSERT INTO candidates (email, password) VALUES (?, ?)");
-            $stmt->execute([$email, $hash]);
+        $errors[] = "Invalid email format.";
+    }
 
-            header('Location: login.php');
+    // Validate org name
+    if (strlen($org_name) < 2) {
+        $errors[] = "Organization name must be at least 2 characters.";
+    }
+
+    // Validate password length
+    if (strlen($password) < 8) {
+        $errors[] = "Password must be at least 8 characters.";
+    }
+
+    // Check passwords match
+    if ($password !== $confirm_password) {
+        $errors[] = "Passwords do not match.";
+    }
+
+    // Check if email already exists
+    $stmt = $pdo->prepare("SELECT id FROM admins WHERE email = ?");
+    $stmt->execute([$email]);
+    if ($stmt->fetch()) {
+        $errors[] = "Email already registered.";
+    }
+
+    if (empty($errors)) {
+        $hash = password_hash($password, PASSWORD_DEFAULT);
+        $stmt = $pdo->prepare("INSERT INTO admins (email, password, org_name) VALUES (?, ?, ?)");
+        if ($stmt->execute([$email, $hash, $org_name])) {
+            $_SESSION['success'] = "Registration successful! You can now login.";
+            header("Location: ../login.php");
             exit;
+        } else {
+            $errors[] = "Database error. Please try again later.";
         }
     }
 }
@@ -31,15 +52,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <!DOCTYPE html>
 <html>
-<head><title>Candidate Registration</title></head>
-<body>
-    <h2>Sign Up as Candidate</h2>
-    <?php if (!empty($error)) echo "<p style='color:red;'>$error</p>"; ?>
-    <form method="post">
-        Email: <input type="email" name="email" required><br><br>
-        Password: <input type="password" name="password" required><br><br>
-        <button type="submit">Register</button>
+<head>
+    <title>Admin Registration - QuickScreening</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="p-5">
+<div class="container col-md-6 offset-md-3">
+    <h2>Admin Registration</h2>
+
+    <?php if (!empty($errors)): ?>
+        <div class="alert alert-danger">
+            <ul>
+            <?php foreach ($errors as $err): ?>
+                <li><?= htmlspecialchars($err) ?></li>
+            <?php endforeach; ?>
+            </ul>
+        </div>
+    <?php endif; ?>
+
+    <form method="post" novalidate>
+        <div class="mb-3">
+            <label for="email" class="form-label">Email address</label>
+            <input type="email" id="email" name="email" required class="form-control" value="<?= isset($email) ? htmlspecialchars($email) : '' ?>">
+        </div>
+        <div class="mb-3">
+            <label for="org_name" class="form-label">Organization Name</label>
+            <input type="text" id="org_name" name="org_name" required class="form-control" value="<?= isset($org_name) ? htmlspecialchars($org_name) : '' ?>">
+        </div>
+        <div class="mb-3">
+            <label for="password" class="form-label">Password (min 8 characters)</label>
+            <input type="password" id="password" name="password" required class="form-control">
+        </div>
+        <div class="mb-3">
+            <label for="confirm_password" class="form-label">Confirm Password</label>
+            <input type="password" id="confirm_password" name="confirm_password" required class="form-control">
+        </div>
+        <button type="submit" class="btn btn-primary">Register</button>
+        <a href="../login.php" class="btn btn-link">Back to Login</a>
     </form>
+</div>
 </body>
 </html>
-
